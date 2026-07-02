@@ -1,0 +1,14 @@
+{
+  "remote_threshold": 0.7,
+  "max_remote_attempts": 1,
+  "fireworks": {
+    "base_url": "https://api.fireworks.ai/inference/v1/chat/completions",
+    "model_id": "accounts/fireworks/models/gemma-3-27b-it",
+    "temperature": 0.0,
+    "max_tokens": 256
+  },
+  "local": {
+    "name": "heuristic-baseline",
+    "token_cost": 0
+  }
+}
