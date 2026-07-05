@@ -39,7 +39,18 @@ class FrugalRouter:
                 fallback_reason=fallback_reason,
             )
 
-        remote_answer = self.remote.answer(task)
+        try:
+            remote_answer = self.remote.answer(task)
+        except Exception as error:
+            return RouteResult(
+                task_id=task.id,
+                answer=local_answer,
+                verification=local_verification,
+                route="remote_error",
+                used_remote=False,
+                fallback_reason=f"{fallback_reason};remote_error:{error}",
+            )
+
         remote_verification = self.verifier.score(task, remote_answer)
         return RouteResult(
             task_id=task.id,

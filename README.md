@@ -72,6 +72,14 @@ When the organizers reveal the tasks:
 4. Update `config/models.json` with the revealed Fireworks model IDs.
 5. Run batches and tune `remote_threshold`.
 
+## Troubleshooting
+
+If Docker Desktop dies at startup with `remove ...: The file cannot be accessed by the system` (stale Unix-socket files after the Windows AF_UNIX regression), run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/fix_docker.ps1
+```
+
 ## Notes
 
 The Fireworks model in `config/models.json` is a placeholder for prep. Replace it with the model IDs revealed at kickoff or a model you confirm in the Fireworks dashboard.

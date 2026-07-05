@@ -16,7 +16,7 @@ class FireworksProvider:
     def __init__(self, config: dict[str, Any]) -> None:
         fireworks_config = config.get("fireworks", {})
         self.base_url = fireworks_config.get("base_url", "https://api.fireworks.ai/inference/v1/chat/completions")
-        self.model = fireworks_config.get("model_id", "accounts/fireworks/models/gemma-7b-it")
+        self.model = fireworks_config.get("model_id", "accounts/fireworks/models/gpt-oss-120b")
         self.temperature = float(fireworks_config.get("temperature", 0.0))
         self.max_tokens = int(fireworks_config.get("max_tokens", 256))
         self.api_key = os.getenv("FIREWORKS_API_KEY")

@@ -19,6 +19,28 @@ def test_router_uses_local_for_easy_short_answer():
     assert result.route == "local"
 
 
+def test_router_falls_back_to_local_when_remote_fails():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    class FailingProvider:
+        def answer(self, task):
+            raise RuntimeError("simulated remote outage")
+
+    router.remote = FailingProvider()
+    task = Task(
+        id="test",
+        input="Write a function that computes a rolling median from a stream.",
+        expected_format="short_text",
+    )
+
+    result = router.run(task)
+
+    assert result.route == "remote_error"
+    assert result.used_remote is False
+    assert "simulated remote outage" in result.fallback_reason
+
+
 def test_router_marks_risky_when_remote_disabled():
     config = load_config("config/models.json")
     router = FrugalRouter(config=config, allow_remote=False)
