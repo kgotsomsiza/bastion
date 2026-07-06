@@ -1,14 +1,31 @@
 {
-  "remote_threshold": 0.7,
-  "max_remote_attempts": 1,
+  "local_confidence_threshold": 0.92,
+  "remote_required_by_default": true,
   "fireworks": {
-    "base_url": "https://api.fireworks.ai/inference/v1/chat/completions",
-    "model_id": "accounts/fireworks/models/gpt-oss-120b",
+    "base_url": "https://api.fireworks.ai/inference/v1",
+    "default_model": "gemma-4-31b-it-nvfp4",
     "temperature": 0.0,
-    "max_tokens": 1024
+    "max_tokens": {
+      "factual": 180,
+      "math": 220,
+      "sentiment": 90,
+      "summarization": 180,
+      "ner": 180,
+      "code_debugging": 700,
+      "logic": 260,
+      "code_generation": 700,
+      "general": 220
+    }
   },
-  "local": {
-    "name": "heuristic-baseline",
-    "token_cost": 0
+  "model_policy": {
+    "code_debugging": ["kimi-k2p7-code", "gemma-4-31b-it", "gemma-4-31b-it-nvfp4", "minimax-m3"],
+    "code_generation": ["kimi-k2p7-code", "gemma-4-31b-it", "gemma-4-31b-it-nvfp4", "minimax-m3"],
+    "math": ["gemma-4-31b-it", "gemma-4-31b-it-nvfp4", "minimax-m3", "gemma-4-26b-a4b-it"],
+    "logic": ["gemma-4-31b-it", "gemma-4-31b-it-nvfp4", "minimax-m3", "gemma-4-26b-a4b-it"],
+    "sentiment": ["gemma-4-26b-a4b-it", "gemma-4-31b-it-nvfp4", "gemma-4-31b-it", "minimax-m3"],
+    "summarization": ["gemma-4-26b-a4b-it", "gemma-4-31b-it-nvfp4", "gemma-4-31b-it", "minimax-m3"],
+    "ner": ["gemma-4-26b-a4b-it", "gemma-4-31b-it-nvfp4", "gemma-4-31b-it", "minimax-m3"],
+    "factual": ["gemma-4-31b-it-nvfp4", "gemma-4-31b-it", "gemma-4-26b-a4b-it", "minimax-m3"],
+    "general": ["gemma-4-31b-it-nvfp4", "gemma-4-31b-it", "gemma-4-26b-a4b-it", "minimax-m3"]
   }
 }

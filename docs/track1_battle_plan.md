@@ -2,48 +2,50 @@
 
 ## North Star
 
-Win by spending remote tokens only when local confidence is too low to survive the accuracy threshold.
+Win by passing the accuracy gate, then spending fewer recorded Fireworks tokens than the field.
 
-## Pre-Kickoff Build
+## Current Track Shape
 
-- Keep the repo small and containerized.
-- Make local runs fast.
-- Log every route decision.
-- Make threshold tuning a config change, not a code rewrite.
-- Prepare a Fireworks smoke test, but avoid burning credits.
+Track 1 is now a general-purpose AI agent across eight categories:
 
-## Kickoff Questions To Answer
+- Factual knowledge
+- Mathematical reasoning
+- Sentiment classification
+- Text summarization
+- Named entity recognition
+- Code debugging
+- Logical / deductive reasoning
+- Code generation
 
-- What exact task schema is scored?
-- What is the accuracy threshold?
-- Are outputs exact-match, semantic-judged, or unit-tested?
-- Which local models are allowed?
-- Which Fireworks models are allowed?
-- Are local model tokens truly counted as zero in all cases?
-- Is there a hidden test set?
-- How is failure handled: zero score, partial credit, or retry?
+The container reads `/input/tasks.json` and writes `/output/results.json`. The harness injects `FIREWORKS_API_KEY`, `FIREWORKS_BASE_URL`, and `ALLOWED_MODELS`.
 
 ## Winning Loop
 
-1. Run the local-only baseline.
-2. Tag failures by type.
-3. Add cheap deterministic rules for common failures.
-4. Add local verification checks.
-5. Enable remote fallback only for risky buckets.
+1. Run deterministic shortcuts only for extremely safe tasks.
+2. Route everything else to the cheapest reliable allowed model.
+3. Keep prompts category-specific and short.
+4. Cap output tokens by category.
+5. Tag failures by type.
 6. Compare token spend against accuracy.
-7. Tune `remote_threshold`.
+7. Tune model policy and max-token caps.
 8. Repeat in small batches.
+
+## Model Policy
+
+- Code generation/debugging: prefer `kimi-k2p7-code`.
+- General, factual, math, logic: prefer Gemma where quality holds.
+- Sentiment, summarization, NER: prefer smaller Gemma options first.
+- Always choose from runtime `ALLOWED_MODELS`; never hardcode a model as required.
 
 ## Error Taxonomy
 
-- Format failures: wrong JSON, too verbose, wrong label, missing field.
-- Knowledge failures: factual question not covered locally.
+- Format failures: malformed JSON, too verbose, wrong label, missing field.
+- Knowledge failures: factual answer is wrong or vague.
 - Reasoning failures: math, code, multi-step logic.
 - Ambiguity failures: prompt underspecified or multiple valid answers.
-- Overcall failures: remote used when local would have passed.
-- Undercall failures: local used when remote was needed.
+- Overcall failures: Fireworks used when deterministic shortcut would have passed.
+- Undercall failures: deterministic shortcut used when Fireworks was needed.
 
 ## Submission Story
 
-The README and video should emphasize that FrugalRouter is not just a wrapper around an API. It is a cost-aware agent with local drafting, local verification, remote escalation, and decision logging.
-
+FrugalRouter is not just a wrapper around an API. It is a cost-aware agent with task classification, model routing, deterministic zero-token shortcuts, Fireworks proxy compliance, and decision logging. Gemma usage is real whenever the allowed-model policy selects Gemma for a task category.

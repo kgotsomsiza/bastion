@@ -36,4 +36,4 @@ class RouteResult:
     route: str
     used_remote: bool
     fallback_reason: str | None = None
-
+    category: str = "general"

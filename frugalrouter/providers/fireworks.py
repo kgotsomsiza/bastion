@@ -15,32 +15,29 @@ class FireworksProvider:
 
     def __init__(self, config: dict[str, Any]) -> None:
         fireworks_config = config.get("fireworks", {})
-        self.base_url = fireworks_config.get("base_url", "https://api.fireworks.ai/inference/v1/chat/completions")
-        self.model = fireworks_config.get("model_id", "accounts/fireworks/models/gpt-oss-120b")
+        self.base_url = fireworks_config.get("base_url", "https://api.fireworks.ai/inference/v1")
+        self.default_model = fireworks_config.get("default_model", "gemma-4-31b-it-nvfp4")
         self.temperature = float(fireworks_config.get("temperature", 0.0))
-        self.max_tokens = int(fireworks_config.get("max_tokens", 256))
+        self.max_tokens = fireworks_config.get("max_tokens", 256)
         self.api_key = os.getenv("FIREWORKS_API_KEY")
 
-    def answer(self, task: Task) -> Answer:
+    def answer(self, task: Task, model: str | None = None, category: str = "general") -> Answer:
         if not self.api_key:
             raise RuntimeError("FIREWORKS_API_KEY is not set.")
 
-        prompt = self._build_prompt(task)
+        selected_model = model or self.default_model
         payload = {
-            "model": self.model,
+            "model": selected_model,
             "messages": [
-                {
-                    "role": "system",
-                    "content": "Answer the task exactly. Keep the response minimal and do not add explanations.",
-                },
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": self._system_prompt(category)},
+                {"role": "user", "content": self._build_prompt(task, category)},
             ],
             "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
+            "max_tokens": self._max_tokens(category),
         }
 
         request = urllib.request.Request(
-            self.base_url,
+            self._chat_completions_url(),
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {self.api_key}",
@@ -63,13 +60,35 @@ class FireworksProvider:
         return Answer(
             text=choice,
             provider=self.name,
-            model=self.model,
+            model=selected_model,
             prompt_tokens=int(usage.get("prompt_tokens", 0)),
             completion_tokens=int(usage.get("completion_tokens", 0)),
             latency_ms=latency_ms,
         )
 
-    def _build_prompt(self, task: Task) -> str:
+    def _build_prompt(self, task: Task, category: str) -> str:
         format_hint = f"\nExpected format: {task.expected_format}" if task.expected_format else ""
-        return f"{task.input}{format_hint}\nAnswer:"
+        return f"Category: {category}\n{task.input}{format_hint}\nAnswer:"
 
+    def _system_prompt(self, category: str) -> str:
+        common = "Answer exactly. Be concise. Do not include extra prefaces."
+        if category in {"code_generation", "code_debugging"}:
+            return f"{common} For code tasks, provide correct code and only the minimal explanation required."
+        if category == "math":
+            return f"{common} Give the final result and a very short calculation only if useful."
+        if category == "ner":
+            return f"{common} Preserve requested labels and formatting."
+        if category == "sentiment":
+            return f"{common} If justification is requested, use one short sentence."
+        return common
+
+    def _max_tokens(self, category: str) -> int:
+        if isinstance(self.max_tokens, dict):
+            return int(self.max_tokens.get(category, self.max_tokens.get("general", 220)))
+        return int(self.max_tokens)
+
+    def _chat_completions_url(self) -> str:
+        base_url = self.base_url.rstrip("/")
+        if base_url.endswith("/chat/completions"):
+            return base_url
+        return f"{base_url}/chat/completions"

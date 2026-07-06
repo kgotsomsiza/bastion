@@ -6,8 +6,10 @@ __pycache__/
 .ruff_cache/
 .env
 outputs/
+input/
+output/
 logs/
 dist/
 build/
 *.egg-info/
-
+docs/participant_guide_amd_act_ii.*

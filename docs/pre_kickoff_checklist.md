@@ -1,4 +1,4 @@
-# Pre-Kickoff Checklist
+# Hackathon Checklist
 
 ## Access
 
@@ -9,35 +9,33 @@
 - Fireworks account created.
 - Fireworks API key created and stored.
 - `FIREWORKS_API_KEY` tested in a fresh terminal.
-- AMD Developer Cloud access checked when credits arrive.
+- AMD Developer Cloud and Fireworks credit requests submitted.
 
 ## Repo
 
-- Public GitHub repository created.
-- README includes setup and usage instructions.
+- README includes official setup and usage instructions.
 - Docker build succeeds.
 - Local sample run succeeds.
-- Remote Fireworks smoke test succeeds.
+- Fireworks smoke test succeeds.
 - Decision logs are written to `logs/decisions.jsonl`.
-- Outputs are written to `outputs/*.jsonl`.
+- Official output is written to `/output/results.json`.
 
-## Kickoff Capture
+## Launch Rules
 
-- Final Track 1 task schema.
-- Allowed local models.
-- Allowed Fireworks models.
-- Accuracy threshold.
-- Scoring command or submission harness.
-- Container runtime constraints.
-- Submission deadline in local timezone.
+- Track 1 input path: `/input/tasks.json`.
+- Track 1 output path: `/output/results.json`.
+- Fireworks calls must use `FIREWORKS_BASE_URL`.
+- Model choices must come from `ALLOWED_MODELS`.
+- Accuracy gate comes first; passing entries are ranked by recorded token count.
+- Docker image must be public and include a linux/amd64 manifest.
+- Image compressed size must be under 10GB.
+- Submission rate limit: 10 per hour per team.
 
-## First Hour After Kickoff
+## First Build Loop
 
-1. Copy the revealed task examples into `data/`.
-2. Update `frugalrouter/types.py` if the schema differs.
-3. Add task-specific local heuristics.
-4. Add task-specific verifier rules.
-5. Run a 20-task batch with remote disabled.
-6. Run the same batch with remote enabled.
-7. Tune `remote_threshold` based on failures.
-
+1. Run local JSON contract tests.
+2. Run a local Docker smoke test with mounted `/input` and `/output`.
+3. Check Fireworks calls use only `ALLOWED_MODELS`.
+4. Check decision logs for token counts and model choices.
+5. Tune model policy and token caps from failures.
+6. Push a public linux/amd64 image only when ready to submit.
