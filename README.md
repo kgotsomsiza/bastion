@@ -83,3 +83,11 @@ powershell -ExecutionPolicy Bypass -File scripts/fix_docker.ps1
 ## Notes
 
 The Fireworks model in `config/models.json` is a placeholder for prep. Replace it with the model IDs revealed at kickoff or a model you confirm in the Fireworks dashboard.
+
+## Kickoff Stream Helper
+
+If the Twitch web player buffers or fails, launch the lablab.ai Twitch stream through VLC:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/watch_lablab_twitch.ps1
+```
