@@ -42,6 +42,10 @@ task -> classify category -> deterministic shortcut if very safe
 
 The agent covers the eight Track 1 categories: factual Q&A, math reasoning, sentiment, summarization, NER, code debugging, logic puzzles, and code generation.
 
+Deterministic shortcuts only fire when they are provably safe: sentiment needs a clear multi-keyword majority with no negation, math needs a purely computational prompt, and exact-response instructions must not offer alternatives. Everything else escalates to Fireworks with per-category model preference (Gemma models where sensible, `kimi-k2p7-code` for code) and per-category token caps.
+
+Remote calls are resilient by design: transient errors (429/5xx) retry with exponential backoff, a persistently failing model fails over to the next allowed model, 404 model names advance immediately, and an empty answer at the token cap is retried once with a larger cap. A task never crashes the batch.
+
 ## Quick Start
 
 ```powershell
@@ -82,10 +86,12 @@ Run with Fireworks enabled for development:
 $env:FIREWORKS_API_KEY=[Environment]::GetEnvironmentVariable("FIREWORKS_API_KEY","User")
 $env:FIREWORKS_BASE_URL="https://api.fireworks.ai/inference/v1"
 $env:FIREWORKS_MODEL_ID="accounts/fireworks/models/gpt-oss-120b"
-powershell -ExecutionPolicy Bypass -File scripts/run_eval.ps1 -Remote
+powershell -ExecutionPolicy Bypass -File scripts/run_eval.ps1 -Remote -Workers 1 -Delay 2
 ```
 
-Reports are written to `reports/eval_report.json` and `reports/eval_results.json`.
+Personal Fireworks keys have tight rate limits; `-Workers 1 -Delay 2` paces requests so 429s do not eat the run.
+
+Reports are written to `reports/eval_report.json` and `reports/eval_results.json`. The report tracks graded accuracy, per-category accuracy, token spend, classifier accuracy, truncated answers (`finish_reason=length`), and — most importantly — `local_wrong_task_ids`: local-shortcut answers that failed grading. That list must stay empty; a wrong local answer is an accuracy-gate risk by definition.
 
 ## Docker
 
@@ -109,7 +115,14 @@ docker run --rm `
   frugalrouter:latest
 ```
 
-For submission, push a public linux/amd64 image to Docker Hub or GitHub Container Registry.
+For submission, build, verify, and publish in one step (the push only happens with `-Push`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_submission.ps1 -Registry docker.io/yourname          # build + verify only
+powershell -ExecutionPolicy Bypass -File scripts/build_submission.ps1 -Registry docker.io/yourname -Push    # publish for submission
+```
+
+The script runs the test suite, builds the linux/amd64 image, and verifies the container contract (reads `/input/tasks.json`, writes `/output/results.json`, exits 0) before any push.
 
 ## Project Layout
 
