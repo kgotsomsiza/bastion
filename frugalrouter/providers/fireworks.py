@@ -26,6 +26,9 @@ class FireworksProvider:
         self.default_model = fireworks_config.get("default_model", "gemma-4-31b-it-nvfp4")
         self.temperature = float(fireworks_config.get("temperature", 0.0))
         self.max_tokens = fireworks_config.get("max_tokens", 256)
+        # Extra request fields keyed by model-name substring, e.g. turning
+        # off Gemma's thinking mode with {"reasoning_effort": "none"}.
+        self.model_overrides = config.get("model_overrides", {})
         self.api_key = os.getenv("FIREWORKS_API_KEY")
 
     def answer(
@@ -34,6 +37,8 @@ class FireworksProvider:
         model: str | None = None,
         category: str = "general",
         max_tokens_override: int | None = None,
+        no_reasoning_directive: bool = False,
+        skip_model_overrides: bool = False,
     ) -> Answer:
         if not self.api_key:
             raise RuntimeError("FIREWORKS_API_KEY is not set.")
@@ -42,11 +47,15 @@ class FireworksProvider:
         payload = {
             "model": selected_model,
             "messages": [
-                {"role": "user", "content": user_prompt(task, category)},
+                {"role": "user", "content": user_prompt(task, category, no_reasoning=no_reasoning_directive)},
             ],
             "temperature": self.temperature,
             "max_tokens": max_tokens_override or self._max_tokens(category),
         }
+        if not skip_model_overrides:
+            for pattern, extra in self.model_overrides.items():
+                if pattern.lower() in selected_model.lower():
+                    payload.update(extra)
 
         request = urllib.request.Request(
             self._chat_completions_url(),

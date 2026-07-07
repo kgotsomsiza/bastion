@@ -4,6 +4,7 @@ import time
 
 from frugalrouter.evaluation.verifier import LocalVerifier
 from frugalrouter.model_policy import ModelPolicy
+from frugalrouter.prompting import looks_like_reasoning_spill
 from frugalrouter.providers.fireworks import FireworksError, FireworksProvider
 from frugalrouter.providers.local import LocalProvider
 from frugalrouter.task_classifier import classify_prompt
@@ -118,8 +119,16 @@ class FrugalRouter:
     def _call_single_model(self, task: Task, model: str, category: str, errors: list[str]):
         """Returns (answer, abort, not_found) for one exact model name."""
         max_tokens_override: int | None = None
+        no_reasoning = False
+        skip_overrides = False
         for attempt in range(self.remote_max_attempts):
-            kwargs = {"max_tokens_override": max_tokens_override} if max_tokens_override else {}
+            kwargs = {}
+            if max_tokens_override:
+                kwargs["max_tokens_override"] = max_tokens_override
+            if no_reasoning:
+                kwargs["no_reasoning_directive"] = True
+            if skip_overrides:
+                kwargs["skip_model_overrides"] = True
             try:
                 answer = self.remote.answer(task, model=model, category=category, **kwargs)
             except FireworksError as error:
@@ -129,6 +138,12 @@ class FrugalRouter:
                 if error.status_code in RETRYABLE_STATUS_CODES:
                     if attempt < self.remote_max_attempts - 1:
                         time.sleep(self.remote_backoff_seconds * (2**attempt))
+                    continue
+                # A 400 may mean the serving stack rejects our extra request
+                # fields (e.g. reasoning_effort); retry once without them.
+                if error.status_code == 400 and not skip_overrides:
+                    skip_overrides = True
+                    errors.append(f"{model}:retrying_without_model_overrides")
                     continue
                 return None, True, False
             except Exception as error:  # noqa: BLE001 - any provider bug must not kill the batch
@@ -142,6 +157,13 @@ class FrugalRouter:
             if answer.finish_reason == "length" and max_tokens_override is None:
                 max_tokens_override = self._rescue_cap(category)
                 errors.append(f"{model}:truncated_at_cap_retrying_with_{max_tokens_override}")
+                continue
+
+            # Thinking-mode deliberation leaked into the answer text cannot be
+            # parsed apart reliably; ask the model to answer directly instead.
+            if not no_reasoning and looks_like_reasoning_spill(answer.text):
+                no_reasoning = True
+                errors.append(f"{model}:reasoning_spill_retrying_with_directive")
                 continue
             return answer, False, False
         return None, False, False

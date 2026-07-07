@@ -225,6 +225,49 @@ def test_router_rescues_truncated_nonempty_answer():
     assert result.answer.text == "def fixed(): pass"
 
 
+def test_router_retries_reasoning_spill_with_directive():
+    config = load_config("config/models.json")
+    config["remote_backoff_seconds"] = 0.001
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    class ThinkingProvider:
+        def answer(self, task, model=None, category="general", no_reasoning_directive=False):
+            if not no_reasoning_directive:
+                return Answer(
+                    text="thought\n*   The user wants the capital.\n\nCanberra.Canberra",
+                    provider="fireworks",
+                    model=model or "fake",
+                    finish_reason="stop",
+                )
+            return Answer(text="Canberra", provider="fireworks", model=model or "fake", finish_reason="stop")
+
+    router.remote = ThinkingProvider()
+
+    result = router.run(Task(id="test", input="What is the capital of Australia? Answer with only the city name."))
+
+    assert result.route == "remote"
+    assert result.answer.text == "Canberra"
+
+
+def test_router_retries_400_without_model_overrides():
+    config = load_config("config/models.json")
+    config["remote_backoff_seconds"] = 0.001
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    class RejectsExtrasProvider:
+        def answer(self, task, model=None, category="general", skip_model_overrides=False):
+            if not skip_model_overrides:
+                raise FireworksError("unknown field reasoning_effort", status_code=400)
+            return Answer(text="ok", provider="fireworks", model=model or "fake", finish_reason="stop")
+
+    router.remote = RejectsExtrasProvider()
+
+    result = router.run(Task(id="test", input="Explain what ROCm is."))
+
+    assert result.route == "remote"
+    assert result.answer.text == "ok"
+
+
 def test_router_rescues_empty_answer_at_token_cap():
     config = load_config("config/models.json")
     config["remote_backoff_seconds"] = 0.001

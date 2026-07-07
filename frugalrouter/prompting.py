@@ -18,10 +18,23 @@ CATEGORY_INSTRUCTIONS = {
 }
 
 
-def user_prompt(task: Task, category: str) -> str:
+def user_prompt(task: Task, category: str, no_reasoning: bool = False) -> str:
     format_hint = f"\nFormat: {task.expected_format}" if task.expected_format else ""
     instruction = CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
-    return f"{instruction}\n{task.input}{format_hint}\nAnswer:"
+    directive = "\nDo not show reasoning or thoughts. Output only the final answer." if no_reasoning else ""
+    return f"{instruction}\n{task.input}{format_hint}{directive}\nAnswer:"
+
+
+def looks_like_reasoning_spill(text: str) -> bool:
+    """Detect thinking-mode deliberation leaked into the answer text.
+
+    Gemma-style spill starts with a bare "thought" line; other models leak
+    meta-planning phrases like "We need answer user".
+    """
+    stripped = text.lstrip()
+    if re.match(r"^thought\s*\n", stripped, flags=re.IGNORECASE):
+        return True
+    return bool(re.match(r"^(?:we need to|we need answer|the user wants|let me think)", stripped, flags=re.IGNORECASE))
 
 
 def clean_answer(text: str, category: str) -> str:

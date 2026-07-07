@@ -20,6 +20,9 @@
       "general": 220
     }
   },
+  "model_overrides": {
+    "gemma": { "reasoning_effort": "none" }
+  },
   "model_policy": {
     "code_debugging": ["kimi-k2p7-code", "gemma-4-31b-it", "gemma-4-31b-it-nvfp4", "minimax-m3"],
     "code_generation": ["kimi-k2p7-code", "gemma-4-31b-it", "gemma-4-31b-it-nvfp4", "minimax-m3"],

@@ -1,4 +1,18 @@
-from frugalrouter.prompting import clean_answer
+from frugalrouter.prompting import clean_answer, looks_like_reasoning_spill, user_prompt
+from frugalrouter.types import Task
+
+
+def test_detects_gemma_thought_spill():
+    assert looks_like_reasoning_spill("thought\n*   The user wants X.")
+    assert looks_like_reasoning_spill("We need answer user. They want a fix.")
+    assert not looks_like_reasoning_spill("Canberra")
+    assert not looks_like_reasoning_spill("def add_one(x):\n    return x + 1")
+
+
+def test_no_reasoning_directive_appended():
+    task = Task(id="t", input="What is 2 + 2?")
+    assert "Do not show reasoning" in user_prompt(task, "math", no_reasoning=True)
+    assert "Do not show reasoning" not in user_prompt(task, "math")
 
 
 def test_strips_single_code_fence():
