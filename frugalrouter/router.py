@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from frugalrouter.evaluation.verifier import LocalVerifier
 from frugalrouter.model_policy import ModelPolicy
-from frugalrouter.providers.fireworks import FireworksProvider
+from frugalrouter.providers.fireworks import FireworksError, FireworksProvider
 from frugalrouter.providers.local import LocalProvider
 from frugalrouter.task_classifier import classify_prompt
 from frugalrouter.types import RouteResult, Task, Verification
@@ -46,17 +46,28 @@ class FrugalRouter:
                 category=category,
             )
 
-        model = self.model_policy.choose(category)
-        try:
-            remote_answer = self.remote.answer(task, model=model, category=category)
-        except Exception as error:
+        errors: list[str] = []
+        remote_answer = None
+        for model in self.model_policy.candidates(category):
+            try:
+                remote_answer = self.remote.answer(task, model=model, category=category)
+                break
+            except FireworksError as error:
+                errors.append(f"{model}:{error}")
+                if error.status_code not in {404}:
+                    break
+            except Exception as error:
+                errors.append(f"{model}:{error}")
+                break
+
+        if remote_answer is None:
             return RouteResult(
                 task_id=task.id,
                 answer=local_candidate.answer,
                 verification=Verification(confidence=local_candidate.confidence, reasons=local_candidate.reasons),
                 route="remote_error",
                 used_remote=False,
-                fallback_reason=f"{fallback_reason};remote_error:{error}",
+                fallback_reason=f"{fallback_reason};remote_error:{' | '.join(errors)}",
                 category=category,
             )
 

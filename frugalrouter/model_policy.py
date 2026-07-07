@@ -19,19 +19,26 @@ class ModelPolicy:
         self.default_model = config.get("fireworks", {}).get("default_model")
 
     def choose(self, category: str) -> str:
+        return self.candidates(category)[0]
+
+    def candidates(self, category: str) -> list[str]:
         preferences = self.policy.get(category) or self.policy.get("general") or []
         if self.default_model:
             preferences = [*preferences, self.default_model]
         preferences = [*preferences, *DEFAULT_ALLOWED_MODELS]
 
+        candidates: list[str] = []
         for preference in preferences:
             match = self._find_allowed(preference)
-            if match:
-                return match
+            if match and match not in candidates:
+                candidates.append(match)
 
         if not self.allowed_models:
             raise RuntimeError("No allowed Fireworks models are configured.")
-        return self.allowed_models[0]
+        for model in self.allowed_models:
+            if model not in candidates:
+                candidates.append(model)
+        return candidates
 
     def _find_allowed(self, preference: str) -> str | None:
         preferred = preference.lower()
@@ -40,4 +47,3 @@ class ModelPolicy:
             if candidate == preferred or preferred in candidate:
                 return model
         return None
-

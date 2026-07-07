@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 
 from frugalrouter.config import env_flag, load_config
@@ -24,6 +26,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Include route/debug fields. Do not use for official submission output.",
     )
+    parser.add_argument("--workers", type=int, default=None, help="Parallel task workers.")
     parser.add_argument("--decision-log", default=None, help="Decision log JSONL path.")
     return parser.parse_args()
 
@@ -34,13 +37,19 @@ def main() -> None:
     allow_remote = not args.no_remote and env_flag("FRUGAL_ALLOW_REMOTE", default=True)
     router = FrugalRouter(config=config, allow_remote=allow_remote)
     logger = DecisionLogger(args.decision_log)
+    tasks = read_tasks(args.tasks)
+    workers = args.workers or int(os.getenv("FRUGAL_WORKERS", "4"))
+
+    if workers <= 1 or len(tasks) <= 1:
+        results = [router.run(task) for task in tasks]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            results = list(executor.map(router.run, tasks))
 
     rows = []
-    remote_count = 0
-    for task in read_tasks(args.tasks):
-        result = router.run(task)
+    remote_count = sum(1 for result in results if result.used_remote)
+    for task, result in zip(tasks, results, strict=True):
         logger.write(task, result)
-        remote_count += 1 if result.used_remote else 0
         row = {
             "task_id": result.task_id,
             "answer": result.answer.text,

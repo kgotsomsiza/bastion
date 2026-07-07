@@ -7,7 +7,14 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from frugalrouter.prompting import clean_answer, user_prompt
 from frugalrouter.types import Answer, Task
+
+
+class FireworksError(RuntimeError):
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class FireworksProvider:
@@ -29,8 +36,7 @@ class FireworksProvider:
         payload = {
             "model": selected_model,
             "messages": [
-                {"role": "system", "content": self._system_prompt(category)},
-                {"role": "user", "content": self._build_prompt(task, category)},
+                {"role": "user", "content": user_prompt(task, category)},
             ],
             "temperature": self.temperature,
             "max_tokens": self._max_tokens(category),
@@ -48,14 +54,14 @@ class FireworksProvider:
 
         started = time.perf_counter()
         try:
-            with urllib.request.urlopen(request, timeout=60) as response:
+            with urllib.request.urlopen(request, timeout=28) as response:
                 body = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Fireworks HTTP {error.code}: {detail}") from error
+            raise FireworksError(f"Fireworks HTTP {error.code}: {detail}", status_code=error.code) from error
 
         latency_ms = int((time.perf_counter() - started) * 1000)
-        choice = body["choices"][0]["message"]["content"].strip()
+        choice = clean_answer(body["choices"][0]["message"]["content"], category)
         usage = body.get("usage", {})
         return Answer(
             text=choice,
@@ -65,22 +71,6 @@ class FireworksProvider:
             completion_tokens=int(usage.get("completion_tokens", 0)),
             latency_ms=latency_ms,
         )
-
-    def _build_prompt(self, task: Task, category: str) -> str:
-        format_hint = f"\nExpected format: {task.expected_format}" if task.expected_format else ""
-        return f"Category: {category}\n{task.input}{format_hint}\nAnswer:"
-
-    def _system_prompt(self, category: str) -> str:
-        common = "Answer exactly. Be concise. Do not include extra prefaces."
-        if category in {"code_generation", "code_debugging"}:
-            return f"{common} For code tasks, provide correct code and only the minimal explanation required."
-        if category == "math":
-            return f"{common} Give the final result and a very short calculation only if useful."
-        if category == "ner":
-            return f"{common} Preserve requested labels and formatting."
-        if category == "sentiment":
-            return f"{common} If justification is requested, use one short sentence."
-        return common
 
     def _max_tokens(self, category: str) -> int:
         if isinstance(self.max_tokens, dict):

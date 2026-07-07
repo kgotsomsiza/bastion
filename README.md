@@ -66,6 +66,8 @@ python -m frugalrouter.cli --tasks data/sample_tasks.json --output outputs/sampl
 python -m frugalrouter.report --log logs/decisions.jsonl
 ```
 
+Use `FRUGAL_WORKERS` or `--workers` to control parallel task execution. The default is `4`.
+
 ## Docker
 
 Build a linux/amd64 image:

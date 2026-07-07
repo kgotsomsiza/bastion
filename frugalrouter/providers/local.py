@@ -4,6 +4,7 @@ import re
 import time
 from dataclasses import dataclass
 
+from frugalrouter.math_solver import solve_simple_math
 from frugalrouter.types import Answer, Task
 
 
@@ -29,12 +30,17 @@ class LocalProvider:
         prompt = task.input.strip()
         lower = prompt.lower()
 
+        exact = self._exact_response(prompt)
+        if exact is not None:
+            return exact, 0.99, ["exact_response_instruction"]
+
         if self._is_sentiment_prompt(lower):
             return self._sentiment(prompt)
 
-        arithmetic = self._simple_arithmetic(prompt)
-        if arithmetic is not None:
-            return arithmetic
+        math_answer = solve_simple_math(prompt)
+        if math_answer is not None:
+            text, reason = math_answer
+            return text, 0.97, [reason]
 
         return "", 0.0, ["no_local_shortcut"]
 
@@ -49,26 +55,15 @@ class LocalProvider:
             return "negative", 0.94, ["clear_sentiment_keywords"]
         return "neutral", 0.9, ["no_clear_sentiment_keywords"]
 
-    def _simple_arithmetic(self, prompt: str) -> tuple[str, float, list[str]] | None:
-        match = re.search(r"(-?\d+(?:\.\d+)?)\s*([+*/-])\s*(-?\d+(?:\.\d+)?)", prompt)
-        if not match:
-            return None
-        left = float(match.group(1))
-        op = match.group(2)
-        right = float(match.group(3))
-        if op == "+":
-            value = left + right
-        elif op == "-":
-            value = left - right
-        elif op == "*":
-            value = left * right
-        elif op == "/" and right != 0:
-            value = left / right
-        else:
-            return None
-        if value.is_integer():
-            return str(int(value)), 0.97, ["direct_arithmetic_expression"]
-        return f"{value:.6g}", 0.96, ["direct_arithmetic_expression"]
-
     def _is_sentiment_prompt(self, prompt: str) -> bool:
         return "sentiment" in prompt and any(word in prompt for word in ["classify", "label", "positive", "negative"])
+
+    def _exact_response(self, prompt: str) -> str | None:
+        match = re.search(
+            r"(?:reply|respond|answer)\s+with\s+exactly\s*(?::\s*([^\n.]+)|['\"]([^'\"]+)['\"])",
+            prompt,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+        return (match.group(1) or match.group(2)).strip()

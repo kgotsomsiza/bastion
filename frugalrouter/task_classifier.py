@@ -20,10 +20,25 @@ def classify_prompt(prompt: str) -> str:
     if _contains_any(text, ["summarize", "summarise", "summary", "condense"]):
         return "summarization"
 
-    if _contains_any(text, ["named entity", "extract entities", "person", "organization", "location", "date"]):
+    if _contains_any(text, ["named entity", "extract entities"]) or (
+        _contains_any(text, ["extract", "identify", "list", "find"])
+        and _contains_any(text, ["person", "people", "organization", "organisation", "location", "date", "entities"])
+    ):
         return "ner"
 
-    if _contains_any(text, ["logic puzzle", "deduce", "constraint", "which person", "who owns", "must be true"]):
+    if _contains_any(
+        text,
+        [
+            "logic puzzle",
+            "deduce",
+            "constraint",
+            "which person",
+            "who owns",
+            "must be true",
+            "cannot both",
+            "exactly one",
+        ],
+    ):
         return "logic"
 
     if _contains_any(text, ["calculate", "compute", "percentage", "percent", "total cost", "how many"]) or re.search(

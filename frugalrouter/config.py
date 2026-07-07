@@ -20,15 +20,20 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> dict[str, Any]:
     if os.getenv("FIREWORKS_BASE_URL"):
         config.setdefault("fireworks", {})["base_url"] = os.environ["FIREWORKS_BASE_URL"]
 
-    if os.getenv("FIREWORKS_MODEL_ID"):
+    model_override = os.getenv("FIREWORKS_MODEL_ID")
+    allowed_override = os.getenv("ALLOWED_MODELS")
+
+    if model_override:
         config.setdefault("fireworks", {})["default_model"] = os.environ["FIREWORKS_MODEL_ID"]
 
-    if os.getenv("ALLOWED_MODELS"):
+    if allowed_override:
         config["allowed_models"] = [
             model.strip()
             for model in os.environ["ALLOWED_MODELS"].split(",")
             if model.strip()
         ]
+    elif model_override:
+        config["allowed_models"] = [model_override]
 
     return config
 
