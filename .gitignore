@@ -9,6 +9,7 @@ outputs/
 input/
 output/
 logs/
+reports/
 dist/
 build/
 *.egg-info/

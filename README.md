@@ -68,6 +68,25 @@ python -m frugalrouter.report --log logs/decisions.jsonl
 
 Use `FRUGAL_WORKERS` or `--workers` to control parallel task execution. The default is `4`.
 
+## Local Evaluation
+
+Run the curated local eval without spending Fireworks tokens:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_eval.ps1
+```
+
+Run with Fireworks enabled for development:
+
+```powershell
+$env:FIREWORKS_API_KEY=[Environment]::GetEnvironmentVariable("FIREWORKS_API_KEY","User")
+$env:FIREWORKS_BASE_URL="https://api.fireworks.ai/inference/v1"
+$env:FIREWORKS_MODEL_ID="accounts/fireworks/models/gpt-oss-120b"
+powershell -ExecutionPolicy Bypass -File scripts/run_eval.ps1 -Remote
+```
+
+Reports are written to `reports/eval_report.json` and `reports/eval_results.json`.
+
 ## Docker
 
 Build a linux/amd64 image:

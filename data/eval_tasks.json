@@ -1,0 +1,62 @@
+[
+  {
+    "task_id": "math-direct-001",
+    "category": "math",
+    "prompt": "Calculate (8 + 4) * 3. Return only the number.",
+    "expected_exact": "36"
+  },
+  {
+    "task_id": "math-percent-001",
+    "category": "math",
+    "prompt": "What is 12.5 percent of 80? Return only the number.",
+    "expected_exact": "10"
+  },
+  {
+    "task_id": "sentiment-001",
+    "category": "sentiment",
+    "prompt": "Classify the sentiment as positive, neutral, or negative: The demo is fast, useful, and clear.",
+    "expected_label": "positive"
+  },
+  {
+    "task_id": "exact-001",
+    "category": "general",
+    "prompt": "Reply with exactly: READY",
+    "expected_exact": "READY"
+  },
+  {
+    "task_id": "factual-001",
+    "category": "factual",
+    "prompt": "Explain in one concise sentence what ROCm is.",
+    "expected_contains_any": ["AMD", "GPU", "ROCm"]
+  },
+  {
+    "task_id": "summary-001",
+    "category": "summarization",
+    "prompt": "Summarize in one sentence: AMD Developer Cloud gives builders access to GPUs for AI workloads in the cloud.",
+    "expected_contains_any": ["AMD", "GPU", "cloud"]
+  },
+  {
+    "task_id": "ner-001",
+    "category": "ner",
+    "prompt": "Extract people, organizations, locations, and dates from this sentence: Lisa joined AMD in Austin on July 6, 2026.",
+    "expected_contains_all": ["Lisa", "AMD", "Austin", "July 6, 2026"]
+  },
+  {
+    "task_id": "logic-001",
+    "category": "logic",
+    "prompt": "Logic puzzle: Ana is older than Ben. Ben is older than Cara. Who is youngest? Return only the name.",
+    "expected_exact": "Cara"
+  },
+  {
+    "task_id": "code-generation-001",
+    "category": "code_generation",
+    "prompt": "Write a Python function add_one(x) that returns x plus one. Return code only.",
+    "expected_contains_all": ["def add_one", "return"]
+  },
+  {
+    "task_id": "code-debugging-001",
+    "category": "code_debugging",
+    "prompt": "Debug this Python function and return corrected code only:\n\ndef double(x):\n    return x * 3",
+    "expected_contains_all": ["def double", "return x * 2"]
+  }
+]
