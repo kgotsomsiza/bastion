@@ -95,7 +95,21 @@ def main() -> None:
 
 def grade_answer(answer: str, spec: dict[str, Any]) -> dict[str, Any]:
     normalized_answer = normalize(answer)
+    primary = _grade_primary(answer, normalized_answer, spec)
 
+    # expected_max_words is an optional additional constraint that ANDs with
+    # the primary grader, so a task can require correct content AND a length
+    # limit (tests format obedience, which bears on strict grading + tokens).
+    if primary["passed"] and "expected_max_words" in spec:
+        word_count = len(re.findall(r"\S+", answer.strip()))
+        limit = int(spec["expected_max_words"])
+        if word_count > limit:
+            return _grade(False, f"{primary['reason']};over_word_limit:{word_count}>{limit}")
+
+    return primary
+
+
+def _grade_primary(answer: str, normalized_answer: str, spec: dict[str, Any]) -> dict[str, Any]:
     if "expected_exact" in spec:
         expected = normalize(str(spec["expected_exact"]))
         return _grade(normalized_answer == expected, f"exact:{spec['expected_exact']}")
@@ -116,6 +130,9 @@ def grade_answer(answer: str, spec: dict[str, Any]) -> dict[str, Any]:
     if "expected_contains_any" in spec:
         matched = [item for item in spec["expected_contains_any"] if normalize(str(item)) in normalized_answer]
         return _grade(bool(matched), f"contains_any_matched:{matched}")
+
+    if "expected_max_words" in spec:
+        return _grade(True, "word_limit_only")
 
     return {"passed": None, "reason": "ungraded"}
 

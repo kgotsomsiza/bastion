@@ -10,7 +10,8 @@ def classify_prompt(prompt: str) -> str:
         text,
         [
             "debug",
-            "bug",
+            "fix the bug",
+            "bug in",
             "fix the code",
             "traceback",
             "error in this code",
@@ -18,7 +19,7 @@ def classify_prompt(prompt: str) -> str:
             "syntax error",
             "typeerror",
             "does not crash",
-            "fix this",
+            "fix the function",
         ],
     ):
         return "code_debugging"
@@ -84,14 +85,43 @@ def classify_prompt(prompt: str) -> str:
             "if all",
             "if some",
             "if no ",
+            "finished before",
+            "finished after",
+            "finished first",
+            "finished last",
+            "knight",
+            "knave",
+            "always tell the truth",
+            "always lie",
+            "every label",
+            "label is wrong",
+            "labels are wrong",
+            "mislabeled",
+            "day before yesterday",
+            "day after tomorrow",
         ],
     ):
         return "logic"
 
     if _contains_any(
         text,
-        ["calculate", "compute", "percentage", "percent", "total cost", "how many", "how far", "how much", "% of"],
-    ) or re.search(r"\d+\s*[-+*/]\s*\d+", text):
+        [
+            "calculate",
+            "compute",
+            "percentage",
+            "percent",
+            "total cost",
+            "how many",
+            "how far",
+            "how much",
+            "% of",
+            "discount",
+            "sum of",
+            "product of",
+            "average of",
+            "final price",
+        ],
+    ) or re.search(r"\d+\s*[-+*/]\s*\d+", text) or re.search(r"\d+\s*%", text):
         return "math"
 
     if _contains_any(
@@ -106,9 +136,16 @@ def classify_prompt(prompt: str) -> str:
             "what does",
             "which company",
             "which country",
+            "which planet",
             "capital of",
             "stand for",
             "chemical symbol",
+            "who developed",
+            "who invented",
+            "who wrote",
+            "who discovered",
+            "si unit",
+            "time complexity",
         ],
     ):
         return "factual"
