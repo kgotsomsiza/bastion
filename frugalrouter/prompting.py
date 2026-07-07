@@ -27,6 +27,7 @@ def user_prompt(task: Task, category: str) -> str:
 def clean_answer(text: str, category: str) -> str:
     # Normalize invisible unicode spaces that break exact-match graders.
     answer = text.replace(" ", " ").replace(" ", " ").strip()
+    answer = _strip_reasoning_blocks(answer)
     for prefix in ("Answer:", "Final answer:", "Final:"):
         if answer.lower().startswith(prefix.lower()):
             answer = answer[len(prefix) :].strip()
@@ -37,6 +38,18 @@ def clean_answer(text: str, category: str) -> str:
         answer = _strip_outer_quotes(answer)
 
     return answer
+
+
+def _strip_reasoning_blocks(text: str) -> str:
+    """Drop <think>...</think> deliberation that reasoning models emit.
+
+    An unclosed <think> means the model was truncated mid-reasoning; nothing
+    after the tag is answer material, so cut there (often leaving an empty
+    answer, which the router's truncation rescue then retries).
+    """
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.split(r"<think>", cleaned, flags=re.IGNORECASE)[0]
+    return cleaned.strip()
 
 
 def _strip_single_code_fence(text: str) -> str:

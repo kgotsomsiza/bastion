@@ -123,7 +123,7 @@ def test_router_tries_next_model_after_404():
 
     class FlakyProvider:
         def answer(self, task, model=None, category="general"):
-            if model == "missing-model":
+            if "missing-model" in model:
                 raise FireworksError("not found", status_code=404)
             return Answer(text=f"{model}:ok", provider="fireworks", model=model or "fake")
 
@@ -134,6 +134,26 @@ def test_router_tries_next_model_after_404():
     assert result.route == "remote"
     assert result.used_remote is True
     assert result.answer.model == "accounts/fireworks/models/minimax-m3"
+
+
+def test_router_retries_404_with_prefixed_model_name():
+    config = load_config("config/models.json")
+    config["allowed_models"] = ["kimi-k2p7-code"]
+    config["model_policy"]["factual"] = ["kimi-k2p7-code"]
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    class PrefixOnlyProvider:
+        def answer(self, task, model=None, category="general"):
+            if not model.startswith("accounts/fireworks/models/"):
+                raise FireworksError("not found", status_code=404)
+            return Answer(text="ok", provider="fireworks", model=model)
+
+    router.remote = PrefixOnlyProvider()
+
+    result = router.run(Task(id="test", input="Explain what ROCm is."))
+
+    assert result.route == "remote"
+    assert result.answer.model == "accounts/fireworks/models/kimi-k2p7-code"
 
 
 def test_router_retries_rate_limited_model_with_backoff():
@@ -179,6 +199,30 @@ def test_router_moves_to_next_model_after_exhausting_retries():
 
     assert result.route == "remote"
     assert result.answer.model == "healthy-model"
+
+
+def test_router_rescues_truncated_nonempty_answer():
+    config = load_config("config/models.json")
+    config["remote_backoff_seconds"] = 0.001
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    class SpilledReasoningProvider:
+        def answer(self, task, model=None, category="general", max_tokens_override=None):
+            if max_tokens_override is None:
+                return Answer(
+                    text="We need answer user. They want",
+                    provider="fireworks",
+                    model=model or "fake",
+                    finish_reason="length",
+                )
+            return Answer(text="def fixed(): pass", provider="fireworks", model=model or "fake", finish_reason="stop")
+
+    router.remote = SpilledReasoningProvider()
+
+    result = router.run(Task(id="test", input="Debug this code:\n\ndef broken(): pass"))
+
+    assert result.route == "remote"
+    assert result.answer.text == "def fixed(): pass"
 
 
 def test_router_rescues_empty_answer_at_token_cap():

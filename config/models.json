@@ -10,13 +10,13 @@
     "temperature": 0.0,
     "max_tokens": {
       "factual": 180,
-      "math": 220,
-      "sentiment": 90,
-      "summarization": 180,
-      "ner": 180,
-      "code_debugging": 700,
-      "logic": 260,
-      "code_generation": 700,
+      "math": 260,
+      "sentiment": 120,
+      "summarization": 220,
+      "ner": 220,
+      "code_debugging": 1000,
+      "logic": 400,
+      "code_generation": 1000,
       "general": 220
     }
   },

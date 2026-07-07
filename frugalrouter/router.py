@@ -12,6 +12,20 @@ from frugalrouter.types import RouteResult, Task, Verification
 
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
+FIREWORKS_MODEL_PREFIX = "accounts/fireworks/models/"
+
+
+def _model_name_variants(model: str) -> list[str]:
+    """Both naming forms for a model: as given, and prefix-toggled.
+
+    The public API only accepts full "accounts/fireworks/models/x" paths
+    while hackathon material uses short launch names; trying both makes the
+    agent robust to whichever convention the harness passes.
+    """
+    if model.startswith(FIREWORKS_MODEL_PREFIX):
+        return [model, model[len(FIREWORKS_MODEL_PREFIX) :]]
+    return [model, f"{FIREWORKS_MODEL_PREFIX}{model}"]
+
 
 class FrugalRouter:
     def __init__(self, config: dict, allow_remote: bool = True) -> None:
@@ -84,11 +98,25 @@ class FrugalRouter:
         )
 
     def _call_with_retry(self, task: Task, model: str, category: str, errors: list[str]):
-        """Call one model with backoff on transient errors.
+        """Call one model, trying both name forms on 404.
 
         Returns (answer, abort). answer is None when this model failed;
         abort=True means the error is not worth trying other models for.
         """
+        for variant in _model_name_variants(model):
+            answer, abort, not_found = self._call_single_model(task, variant, category, errors)
+            if answer is not None:
+                return answer, False
+            if abort:
+                return None, True
+            if not not_found:
+                # Transient errors exhausted; the alternate name form hits
+                # the same backend, so move on to the next model instead.
+                return None, False
+        return None, False
+
+    def _call_single_model(self, task: Task, model: str, category: str, errors: list[str]):
+        """Returns (answer, abort, not_found) for one exact model name."""
         max_tokens_override: int | None = None
         for attempt in range(self.remote_max_attempts):
             kwargs = {"max_tokens_override": max_tokens_override} if max_tokens_override else {}
@@ -97,22 +125,31 @@ class FrugalRouter:
             except FireworksError as error:
                 errors.append(f"{model}:{error}")
                 if error.status_code == 404:
-                    return None, False
+                    return None, False, True
                 if error.status_code in RETRYABLE_STATUS_CODES:
                     if attempt < self.remote_max_attempts - 1:
                         time.sleep(self.remote_backoff_seconds * (2**attempt))
                     continue
-                return None, True
+                return None, True, False
             except Exception as error:  # noqa: BLE001 - any provider bug must not kill the batch
                 errors.append(f"{model}:{error}")
-                return None, True
+                return None, True, False
 
-            # Reasoning-heavy models can spend the whole cap before emitting
-            # an answer; an empty submission is a guaranteed zero, so retry
-            # once with a generous cap.
-            if not answer.text.strip() and answer.finish_reason == "length" and max_tokens_override is None:
-                max_tokens_override = self.rescue_max_tokens
-                errors.append(f"{model}:empty_at_cap_retrying_with_{max_tokens_override}")
+            # Reasoning-heavy models can spend the whole cap before finishing
+            # the real answer, leaving it empty or full of spilled reasoning;
+            # a truncated submission is near-certain zero, so retry once with
+            # a much larger cap.
+            if answer.finish_reason == "length" and max_tokens_override is None:
+                max_tokens_override = self._rescue_cap(category)
+                errors.append(f"{model}:truncated_at_cap_retrying_with_{max_tokens_override}")
                 continue
-            return answer, False
-        return None, False
+            return answer, False, False
+        return None, False, False
+
+    def _rescue_cap(self, category: str) -> int:
+        caps = self.config.get("fireworks", {}).get("max_tokens", {})
+        if isinstance(caps, dict):
+            base = int(caps.get(category, caps.get("general", 220)))
+        else:
+            base = int(caps)
+        return max(self.rescue_max_tokens, base * 2)
