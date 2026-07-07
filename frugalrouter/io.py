@@ -16,7 +16,8 @@ def read_tasks(path: str | Path) -> list[Task]:
 
 def read_tasks_json(path: str | Path) -> list[Task]:
     task_path = Path(path)
-    with task_path.open("r", encoding="utf-8") as file:
+    # utf-8-sig tolerates a UTF-8 BOM, which Windows tools often emit.
+    with task_path.open("r", encoding="utf-8-sig") as file:
         payload = json.load(file)
 
     if not isinstance(payload, list):
@@ -44,7 +45,7 @@ def read_tasks_json(path: str | Path) -> list[Task]:
 def read_tasks_jsonl(path: str | Path) -> list[Task]:
     tasks: list[Task] = []
     task_path = Path(path)
-    with task_path.open("r", encoding="utf-8") as file:
+    with task_path.open("r", encoding="utf-8-sig") as file:
         for line_number, line in enumerate(file, start=1):
             stripped = line.strip()
             if not stripped:

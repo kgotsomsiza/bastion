@@ -24,6 +24,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-remote", action="store_true", help="Disable Fireworks calls.")
     parser.add_argument("--workers", type=int, default=None, help="Parallel task workers.")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of tasks.")
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=0.0,
+        help="Seconds to sleep between tasks (sequential runs only); paces personal-key rate limits.",
+    )
     parser.add_argument("--decision-log", default=None, help="Decision log JSONL path.")
     return parser.parse_args()
 
@@ -45,7 +51,11 @@ def main() -> None:
 
     workers = args.workers or int(os.getenv("FRUGAL_WORKERS", "4"))
     if workers <= 1 or len(tasks) <= 1:
-        results = [router.run(task) for task in tasks]
+        results = []
+        for index, task in enumerate(tasks):
+            if index and args.delay > 0:
+                time.sleep(args.delay)
+            results.append(router.run(task))
     else:
         with ThreadPoolExecutor(max_workers=workers) as executor:
             results = list(executor.map(router.run, tasks))
@@ -68,6 +78,7 @@ def main() -> None:
                 "provider": result.answer.provider,
                 "prompt_tokens": result.answer.prompt_tokens,
                 "completion_tokens": result.answer.completion_tokens,
+                "finish_reason": result.answer.finish_reason,
                 "latency_ms": result.answer.latency_ms,
                 "fallback_reason": result.fallback_reason,
                 "verification": asdict(result.verification),
@@ -122,6 +133,22 @@ def summarize(rows: list[dict[str, Any]], elapsed_seconds: float) -> dict[str, A
         routes[row["route"]] = routes.get(row["route"], 0) + 1
         categories[row["detected_category"]] = categories.get(row["detected_category"], 0) + 1
 
+    with_expected = [row for row in rows if row.get("expected_category")]
+    matched = [row for row in with_expected if row["expected_category"] == row["detected_category"]]
+
+    local_graded = [row for row in graded if row["route"] == "local"]
+    local_wrong = [row for row in local_graded if not row["passed"]]
+
+    truncated = [row for row in rows if row.get("finish_reason") == "length"]
+
+    per_category: dict[str, dict[str, Any]] = {}
+    for row in graded:
+        bucket = per_category.setdefault(row.get("expected_category") or "unknown", {"graded": 0, "passed": 0})
+        bucket["graded"] += 1
+        bucket["passed"] += 1 if row["passed"] else 0
+    for bucket in per_category.values():
+        bucket["accuracy"] = round(bucket["passed"] / bucket["graded"], 3) if bucket["graded"] else None
+
     return {
         "tasks": len(rows),
         "graded_tasks": len(graded),
@@ -135,6 +162,14 @@ def summarize(rows: list[dict[str, Any]], elapsed_seconds: float) -> dict[str, A
         "elapsed_seconds": round(elapsed_seconds, 3),
         "routes": routes,
         "categories": categories,
+        "classification_accuracy": (len(matched) / len(with_expected)) if with_expected else None,
+        "misclassified_task_ids": [row["task_id"] for row in with_expected if row not in matched],
+        "local_answered": len(local_graded),
+        "local_passed": sum(1 for row in local_graded if row["passed"]),
+        "local_wrong_task_ids": [row["task_id"] for row in local_wrong],
+        "truncated_count": len(truncated),
+        "truncated_task_ids": [row["task_id"] for row in truncated],
+        "per_category": per_category,
         "failed_task_ids": [row["task_id"] for row in graded if not row["passed"]],
     }
 
@@ -149,6 +184,16 @@ def print_report(report: dict[str, Any]) -> None:
     print(f"Elapsed: {report['elapsed_seconds']}s")
     print(f"Routes: {report['routes']}")
     print(f"Categories: {report['categories']}")
+    classification = report["classification_accuracy"]
+    if classification is not None:
+        print(f"Classification accuracy: {classification:.1%}")
+    if report["misclassified_task_ids"]:
+        print(f"Misclassified: {', '.join(report['misclassified_task_ids'])}")
+    print(f"Local answered: {report['local_answered']} (wrong: {len(report['local_wrong_task_ids'])})")
+    if report["local_wrong_task_ids"]:
+        print(f"!! LOCAL WRONG (accuracy-gate risk): {', '.join(report['local_wrong_task_ids'])}")
+    if report["truncated_count"]:
+        print(f"!! Truncated (finish_reason=length): {', '.join(report['truncated_task_ids'])}")
     if report["failed_task_ids"]:
         print(f"Failed: {', '.join(report['failed_task_ids'])}")
 
@@ -162,7 +207,7 @@ def _grade(passed: bool, reason: str) -> dict[str, Any]:
 
 
 def _load_specs(path: str | Path) -> list[dict[str, Any]]:
-    with Path(path).open("r", encoding="utf-8") as file:
+    with Path(path).open("r", encoding="utf-8-sig") as file:
         payload = json.load(file)
     if not isinstance(payload, list):
         raise ValueError("Eval tasks must be a JSON array.")

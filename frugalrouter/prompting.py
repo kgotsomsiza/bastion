@@ -6,7 +6,7 @@ from frugalrouter.types import Task
 CATEGORY_INSTRUCTIONS = {
     "factual": "Accurate, concise.",
     "math": "Solve; final answer first.",
-    "sentiment": "Classify sentiment; brief if needed.",
+    "sentiment": "Classify sentiment with one word: positive, negative, or neutral. Factual statements with no expressed opinion are neutral.",
     "summarization": "Summarize faithfully; obey format.",
     "ner": "Extract entities; preserve requested labels/format.",
     "code_debugging": "Fix bug; corrected code; minimal explanation.",

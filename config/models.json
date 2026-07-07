@@ -1,6 +1,9 @@
 {
   "local_confidence_threshold": 0.92,
   "remote_required_by_default": true,
+  "remote_max_attempts": 4,
+  "remote_backoff_seconds": 2.0,
+  "rescue_max_tokens": 900,
   "fireworks": {
     "base_url": "https://api.fireworks.ai/inference/v1",
     "default_model": "gemma-4-31b-it-nvfp4",

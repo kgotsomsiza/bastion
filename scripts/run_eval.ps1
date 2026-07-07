@@ -3,7 +3,8 @@ param(
     [string]$OutDir = "reports",
     [int]$Workers = 4,
     [switch]$Remote,
-    [int]$Limit = 0
+    [int]$Limit = 0,
+    [double]$Delay = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,6 +22,10 @@ if (-not $Remote) {
 
 if ($Limit -gt 0) {
     $argsList += @("--limit", "$Limit")
+}
+
+if ($Delay -gt 0) {
+    $argsList += @("--delay", "$Delay")
 }
 
 python @argsList

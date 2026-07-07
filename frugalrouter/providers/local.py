@@ -44,16 +44,22 @@ class LocalProvider:
 
         return "", 0.0, ["no_local_shortcut"]
 
+    NEGATION_MARKERS = {"not", "never", "no", "hardly", "barely", "isn't", "wasn't", "aren't", "won't", "don't", "doesn't", "didn't", "can't", "couldn't", "nothing", "neither", "nor", "lacks", "without"}
+
     def _sentiment(self, prompt: str) -> tuple[str, float, list[str]]:
         positive = {"good", "great", "fast", "clear", "useful", "love", "excellent", "happy", "impressed"}
         negative = {"bad", "slow", "confusing", "broken", "hate", "poor", "wrong", "sad", "terrible", "awful"}
         words = set(re.findall(r"[a-zA-Z']+", prompt.lower()))
+        if words & self.NEGATION_MARKERS:
+            return "", 0.0, ["sentiment_negation_present"]
+        # One keyword is too weak (sarcasm: "Oh great, another crash");
+        # require a clear multi-keyword majority before answering locally.
         score = len(words & positive) - len(words & negative)
-        if score > 0:
+        if score >= 2:
             return "positive", 0.94, ["clear_sentiment_keywords"]
-        if score < 0:
+        if score <= -2:
             return "negative", 0.94, ["clear_sentiment_keywords"]
-        return "neutral", 0.9, ["no_clear_sentiment_keywords"]
+        return "", 0.0, ["no_clear_sentiment_keywords"]
 
     def _is_sentiment_prompt(self, prompt: str) -> bool:
         return "sentiment" in prompt and any(word in prompt for word in ["classify", "label", "positive", "negative"])
@@ -66,4 +72,12 @@ class LocalProvider:
         )
         if not match:
             return None
-        return (match.group(1) or match.group(2)).strip()
+        # "Answer with exactly 'yes' or 'no': ..." offers alternatives; the right
+        # choice depends on the actual question, so it is not a safe shortcut.
+        tail = prompt[match.end() :]
+        if re.match(r"\s*(?:,|or\b|and\b)", tail, flags=re.IGNORECASE):
+            return None
+        literal = (match.group(1) or match.group(2)).strip()
+        if re.search(r"\bor\b", literal, flags=re.IGNORECASE):
+            return None
+        return literal

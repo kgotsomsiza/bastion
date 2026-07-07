@@ -20,6 +20,7 @@ class Answer:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     latency_ms: int = 0
+    finish_reason: str | None = None
 
 
 @dataclass(frozen=True)

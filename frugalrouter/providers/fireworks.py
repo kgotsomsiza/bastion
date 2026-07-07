@@ -28,7 +28,13 @@ class FireworksProvider:
         self.max_tokens = fireworks_config.get("max_tokens", 256)
         self.api_key = os.getenv("FIREWORKS_API_KEY")
 
-    def answer(self, task: Task, model: str | None = None, category: str = "general") -> Answer:
+    def answer(
+        self,
+        task: Task,
+        model: str | None = None,
+        category: str = "general",
+        max_tokens_override: int | None = None,
+    ) -> Answer:
         if not self.api_key:
             raise RuntimeError("FIREWORKS_API_KEY is not set.")
 
@@ -39,7 +45,7 @@ class FireworksProvider:
                 {"role": "user", "content": user_prompt(task, category)},
             ],
             "temperature": self.temperature,
-            "max_tokens": self._max_tokens(category),
+            "max_tokens": max_tokens_override or self._max_tokens(category),
         }
 
         request = urllib.request.Request(
@@ -61,7 +67,11 @@ class FireworksProvider:
             raise FireworksError(f"Fireworks HTTP {error.code}: {detail}", status_code=error.code) from error
 
         latency_ms = int((time.perf_counter() - started) * 1000)
-        choice = clean_answer(body["choices"][0]["message"]["content"], category)
+        first_choice = body["choices"][0]
+        # Reasoning models can hit the token cap before emitting any final
+        # content, leaving message without a "content" key.
+        content = (first_choice.get("message") or {}).get("content") or ""
+        choice = clean_answer(content, category)
         usage = body.get("usage", {})
         return Answer(
             text=choice,
@@ -70,6 +80,7 @@ class FireworksProvider:
             prompt_tokens=int(usage.get("prompt_tokens", 0)),
             completion_tokens=int(usage.get("completion_tokens", 0)),
             latency_ms=latency_ms,
+            finish_reason=first_choice.get("finish_reason"),
         )
 
     def _max_tokens(self, category: str) -> int:
