@@ -120,6 +120,15 @@ def classify_prompt(prompt: str) -> str:
             "product of",
             "average of",
             "final price",
+            "how long",
+            "how fast",
+            "at what time",
+            "average speed",
+            "km/h",
+            "km per hour",
+            "miles per hour",
+            "per hour",
+            "per second",
         ],
     ) or re.search(r"\d+\s*[-+*/]\s*\d+", text) or re.search(r"\d+\s*%", text):
         return "math"

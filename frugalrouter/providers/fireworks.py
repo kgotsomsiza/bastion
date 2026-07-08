@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from frugalrouter.prompting import clean_answer, user_prompt
+from frugalrouter.prompting import REASONING_CATEGORIES, clean_answer, user_prompt
 from frugalrouter.types import Answer, Task
 
 
@@ -52,7 +52,10 @@ class FireworksProvider:
             "temperature": self.temperature,
             "max_tokens": max_tokens_override or self._max_tokens(category),
         }
-        if not skip_model_overrides:
+        # Overrides (e.g. reasoning_effort:none for Gemma) suppress thinking to
+        # save tokens on easy tasks. Reasoning categories need that thinking, so
+        # skip the overrides there.
+        if not skip_model_overrides and category not in REASONING_CATEGORIES:
             for pattern, extra in self.model_overrides.items():
                 if pattern.lower() in selected_model.lower():
                     payload.update(extra)

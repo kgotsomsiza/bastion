@@ -10,9 +10,26 @@ def test_detects_gemma_thought_spill():
 
 
 def test_no_reasoning_directive_appended():
-    task = Task(id="t", input="What is 2 + 2?")
-    assert "Do not show reasoning" in user_prompt(task, "math", no_reasoning=True)
-    assert "Do not show reasoning" not in user_prompt(task, "math")
+    # factual is a non-reasoning category, where the directive applies.
+    task = Task(id="t", input="What is the capital of France?")
+    assert "Do not show reasoning" in user_prompt(task, "factual", no_reasoning=True)
+    assert "Do not show reasoning" not in user_prompt(task, "factual")
+
+
+def test_reasoning_category_prompts_for_step_by_step():
+    task = Task(id="t", input="A train travels 120 km in 2 hours; how long for 300 km?")
+    # math/logic ask for working + a FINAL ANSWER marker, and ignore no_reasoning.
+    for cat in ("math", "logic"):
+        prompt = user_prompt(task, cat, no_reasoning=True)
+        assert "FINAL ANSWER" in prompt
+        assert "Do not show reasoning" not in prompt
+
+
+def test_reasoning_category_extracts_final_answer():
+    from frugalrouter.prompting import clean_answer
+
+    reasoned = "Step 1: 120/2 = 60 km/h.\nStep 2: 300/60 = 5 h.\n**FINAL ANSWER:** 5 hours"
+    assert clean_answer(reasoned, "math") == "5 hours"
 
 
 def test_strips_single_code_fence():

@@ -4,7 +4,7 @@ import time
 
 from frugalrouter.evaluation.verifier import LocalVerifier
 from frugalrouter.model_policy import ModelPolicy
-from frugalrouter.prompting import looks_like_reasoning_spill
+from frugalrouter.prompting import REASONING_CATEGORIES, looks_like_reasoning_spill
 from frugalrouter.providers.fireworks import FireworksError, FireworksProvider
 from frugalrouter.providers.local import LocalProvider
 from frugalrouter.providers.local_model import LocalModelProvider
@@ -182,7 +182,12 @@ class FrugalRouter:
 
             # Thinking-mode deliberation leaked into the answer text cannot be
             # parsed apart reliably; ask the model to answer directly instead.
-            if not no_reasoning and looks_like_reasoning_spill(answer.text):
+            # Reasoning categories WANT step-by-step working, so skip this there.
+            if (
+                category not in REASONING_CATEGORIES
+                and not no_reasoning
+                and looks_like_reasoning_spill(answer.text)
+            ):
                 no_reasoning = True
                 errors.append(f"{model}:reasoning_spill_retrying_with_directive")
                 continue
