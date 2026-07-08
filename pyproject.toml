@@ -12,6 +12,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+local = ["llama-cpp-python>=0.3", "huggingface_hub>=0.20"]
 
 [tool.setuptools.packages.find]
 include = ["frugalrouter*"]

@@ -7,6 +7,7 @@ from frugalrouter.model_policy import ModelPolicy
 from frugalrouter.prompting import looks_like_reasoning_spill
 from frugalrouter.providers.fireworks import FireworksError, FireworksProvider
 from frugalrouter.providers.local import LocalProvider
+from frugalrouter.providers.local_model import LocalModelProvider
 from frugalrouter.task_classifier import classify_prompt
 from frugalrouter.types import RouteResult, Task, Verification
 
@@ -37,6 +38,7 @@ class FrugalRouter:
         self.remote_backoff_seconds = float(config.get("remote_backoff_seconds", 2.0))
         self.rescue_max_tokens = int(config.get("rescue_max_tokens", 900))
         self.local = LocalProvider()
+        self.local_model = LocalModelProvider(config)
         self.remote = FireworksProvider(config)
         self.model_policy = ModelPolicy(config)
         self.verifier = LocalVerifier()
@@ -54,6 +56,25 @@ class FrugalRouter:
                 used_remote=False,
                 category=category,
             )
+
+        # Zero-token tier 2: a bundled small model answers gated easy
+        # categories for free. Skipped entirely (no-op) when no model is
+        # present, so the Fireworks-only baseline is unchanged.
+        if self.local_model.available_for(category):
+            try:
+                lm_answer = self.local_model.answer(task, category=category)
+            except Exception:  # noqa: BLE001 - never let a local-model bug kill the task
+                lm_answer = None
+            if lm_answer is not None and lm_answer.text.strip():
+                lm_verification = self.verifier.score(task, lm_answer)
+                return RouteResult(
+                    task_id=task.id,
+                    answer=lm_answer,
+                    verification=lm_verification,
+                    route="local_model",
+                    used_remote=False,
+                    category=category,
+                )
 
         fallback_reason = (
             f"local_confidence_{local_candidate.confidence:.2f}_below_{self.local_confidence_threshold:.2f}"

@@ -14,3 +14,4 @@ dist/
 build/
 *.egg-info/
 docs/participant_guide_amd_act_ii.*
+models/

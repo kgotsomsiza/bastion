@@ -291,6 +291,65 @@ def test_router_rescues_empty_answer_at_token_cap():
     assert seen_overrides == [None, 900]
 
 
+def test_router_uses_local_model_for_gated_category():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    class FakeLocalModel:
+        def available_for(self, category):
+            return category == "factual"
+
+        def answer(self, task, category="general"):
+            return Answer(text="Canberra", provider="local_model", model="fake-2b")
+
+    class ExplodingRemote:
+        def answer(self, *a, **k):
+            raise AssertionError("remote should not be called when local model answers")
+
+    router.local_model = FakeLocalModel()
+    router.remote = ExplodingRemote()
+
+    result = router.run(Task(id="t", input="What is the capital of Australia?"))
+
+    assert result.route == "local_model"
+    assert result.used_remote is False
+    assert result.answer.text == "Canberra"
+
+
+def test_router_falls_back_to_remote_when_local_model_empty():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    class EmptyLocalModel:
+        def available_for(self, category):
+            return True
+
+        def answer(self, task, category="general"):
+            return Answer(text="", provider="local_model", model="fake-2b")
+
+    class FakeRemote:
+        def answer(self, task, model=None, category="general", **kwargs):
+            return Answer(text="remote-answer", provider="fireworks", model=model or "fake")
+
+    router.local_model = EmptyLocalModel()
+    router.remote = FakeRemote()
+
+    result = router.run(Task(id="t", input="Explain what ROCm is."))
+
+    assert result.route == "remote"
+    assert result.used_remote is True
+    assert result.answer.text == "remote-answer"
+
+
+def test_local_model_inert_without_weights_matches_baseline():
+    # Default config has a local_model section, but no weights exist locally,
+    # so available_for must be False and routing must be pure Fireworks.
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    assert router.local_model.available_for("factual") is False
+
+
 def test_model_policy_uses_allowed_models_from_harness():
     config = load_config("config/models.json")
     config["allowed_models"] = ["accounts/fireworks/models/kimi-k2p7-code", "accounts/fireworks/models/minimax-m3"]

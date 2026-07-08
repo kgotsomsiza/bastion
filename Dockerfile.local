@@ -1,0 +1,40 @@
+# Local-model variant of the Track 1 image: bundles a small CPU model so
+# easy categories are answered at zero Fireworks tokens. Build this on a
+# fast connection (e.g. the AMD Developer Cloud pod) - it downloads ~1.9GB
+# of weights at build time.
+#
+#   docker buildx build --platform linux/amd64 \
+#     --build-arg HF_TOKEN=hf_xxx \
+#     -f Dockerfile.local -t <registry>/frugalrouter:local --push .
+#
+# Grading box is 2 vCPU / 4 GB RAM, so a 2-3B 4-bit model is the ceiling.
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV FRUGAL_ALLOW_REMOTE=1
+ENV LOCAL_MODEL_PATH=/app/models/model.gguf
+# Match the grading box so llama.cpp thread count is realistic.
+ENV FRUGAL_WORKERS=2
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY frugalrouter ./frugalrouter
+COPY config ./config
+
+# CPU wheel avoids compiling llama.cpp.
+RUN python -m pip install --no-cache-dir -e . \
+ && python -m pip install --no-cache-dir llama-cpp-python \
+      --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+
+# Download the GGUF at build time (fast on a datacenter connection).
+ARG HF_TOKEN
+ARG MODEL_REPO=bartowski/Qwen2.5-3B-Instruct-GGUF
+ARG MODEL_FILE=Qwen2.5-3B-Instruct-Q4_K_M.gguf
+RUN mkdir -p /app/models \
+ && curl -L --fail --retry 5 -H "Authorization: Bearer ${HF_TOKEN}" \
+      -o /app/models/model.gguf \
+      "https://huggingface.co/${MODEL_REPO}/resolve/main/${MODEL_FILE}"
+
+CMD ["python", "-m", "frugalrouter.cli"]
