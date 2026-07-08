@@ -12,6 +12,15 @@ outputs
 input
 output
 docs
+docs/demo_video_script.md
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.wmv
+*.m4v
+~$*
 tests
 scripts
 data

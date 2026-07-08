@@ -2,10 +2,10 @@
 # easy categories are answered at zero Fireworks tokens.
 #
 # Built OFFLINE (no network) because Docker Desktop's build network on this
-# machine is unreliable: frugalrouter has no deps so it runs off PYTHONPATH,
+# machine is unreliable: the package has no deps so it runs off PYTHONPATH,
 # and llama-cpp-python is installed from wheels vendored into ./wheels.
 # Populate ./wheels first (scripts/fetch_wheels.ps1), then:
-#   docker buildx build --platform linux/amd64 -f Dockerfile.local -t <registry>/frugalrouter:local .
+#   docker buildx build --platform linux/amd64 -f Dockerfile.local -t <registry>/bastion:local .
 #
 # Grading box is 2 vCPU / 4 GB RAM, so a 2-3B 4-bit model is the ceiling.
 FROM python:3.11-slim

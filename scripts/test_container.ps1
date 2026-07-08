@@ -11,7 +11,7 @@
 # own ALLOWED_MODELS, which our policy routes to just the same).
 param(
     [string]$Tasks = "data/sample_tasks.json",
-    [string]$Image = "frugalrouter:baseline",
+    [string]$Image = "bastion:track1",
     [string]$Models = "accounts/fireworks/models/minimax-m3,accounts/fireworks/models/kimi-k2p7-code",
     [int]$Workers = 2
 )

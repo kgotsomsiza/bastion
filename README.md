@@ -1,8 +1,12 @@
-# FrugalRouter
+# Bastion
+
+![Bastion cover](assets/bastion-cover.png)
 
 Track 1 agent for the AMD Developer Hackathon: ACT II.
 
-FrugalRouter is a token-efficient general-purpose AI agent. It handles the official Track 1 task format, uses only models from `ALLOWED_MODELS`, sends all Fireworks calls through `FIREWORKS_BASE_URL`, and writes the required `/output/results.json`.
+Bastion is an accuracy-first, token-efficient general-purpose AI agent. It handles the official Track 1 task format, uses only models from `ALLOWED_MODELS`, sends all Fireworks calls through `FIREWORKS_BASE_URL`, and writes the required `/output/results.json`.
+
+The implementation package is named `frugalrouter`; the submitted project name is Bastion.
 
 ## Official Track 1 Contract
 
@@ -91,14 +95,14 @@ powershell -ExecutionPolicy Bypass -File scripts/run_eval.ps1 -Remote -Workers 1
 
 Personal Fireworks keys have tight rate limits; `-Workers 1 -Delay 2` paces requests so 429s do not eat the run.
 
-Reports are written to `reports/eval_report.json` and `reports/eval_results.json`. The report tracks graded accuracy, per-category accuracy, token spend, classifier accuracy, truncated answers (`finish_reason=length`), and — most importantly — `local_wrong_task_ids`: local-shortcut answers that failed grading. That list must stay empty; a wrong local answer is an accuracy-gate risk by definition.
+Reports are written to `reports/eval_report.json` and `reports/eval_results.json`. The report tracks graded accuracy, per-category accuracy, token spend, classifier accuracy, truncated answers (`finish_reason=length`), and, most importantly, `local_wrong_task_ids`: local-shortcut answers that failed grading. That list must stay empty; a wrong local answer is an accuracy-gate risk by definition.
 
 ## Docker
 
 Build a linux/amd64 image:
 
 ```powershell
-docker buildx build --platform linux/amd64 -t frugalrouter:latest .
+docker buildx build --platform linux/amd64 -t bastion:track1 .
 ```
 
 Local container smoke test:
@@ -112,17 +116,23 @@ docker run --rm `
   -e ALLOWED_MODELS="minimax-m3,kimi-k2p7-code,gemma-4-31b-it,gemma-4-26b-a4b-it,gemma-4-31b-it-nvfp4" `
   -v ${PWD}/input:/input `
   -v ${PWD}/output:/output `
-  frugalrouter:latest
+  bastion:track1
 ```
 
 For submission, build, verify, and publish in one step (the push only happens with `-Push`):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/build_submission.ps1 -Registry docker.io/yourname          # build + verify only
-powershell -ExecutionPolicy Bypass -File scripts/build_submission.ps1 -Registry docker.io/yourname -Push    # publish for submission
+powershell -ExecutionPolicy Bypass -File scripts/build_submission.ps1 -Registry docker.io/kgotsomsiza          # build + verify only
+powershell -ExecutionPolicy Bypass -File scripts/build_submission.ps1 -Registry docker.io/kgotsomsiza -Push    # publish for submission
 ```
 
 The script runs the test suite, builds the linux/amd64 image, and verifies the container contract (reads `/input/tasks.json`, writes `/output/results.json`, exits 0) before any push.
+
+Published submission image:
+
+```text
+docker.io/kgotsomsiza/bastion:track1
+```
 
 ## Project Layout
 

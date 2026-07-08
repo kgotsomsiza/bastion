@@ -1,14 +1,14 @@
 # Build (and optionally publish) the Track 1 submission image.
 #
 # Build + tag only:
-#   powershell -ExecutionPolicy Bypass -File scripts/build_submission.ps1 -Registry docker.io/yourname
+#   powershell -ExecutionPolicy Bypass -File scripts/build_submission.ps1 -Registry docker.io/kgotsomsiza
 #
 # Build, tag, and push publicly (only when ready to submit):
-#   powershell -ExecutionPolicy Bypass -File scripts/build_submission.ps1 -Registry docker.io/yourname -Push
+#   powershell -ExecutionPolicy Bypass -File scripts/build_submission.ps1 -Registry docker.io/kgotsomsiza -Push
 param(
     [Parameter(Mandatory = $true)][string]$Registry,
-    [string]$Name = "frugalrouter",
-    [string]$Tag = "latest",
+    [string]$Name = "bastion",
+    [string]$Tag = "track1",
     [switch]$Push
 )
 
@@ -24,7 +24,7 @@ docker buildx build --platform linux/amd64 -t $image -t "$Name`:$Tag" .
 if ($LASTEXITCODE -ne 0) { throw "Docker build failed." }
 
 Write-Host "Verifying offline container contract..."
-$smokeDir = Join-Path $env:TEMP "frugalrouter-smoke"
+$smokeDir = Join-Path $env:TEMP "bastion-smoke"
 New-Item -ItemType Directory -Force -Path "$smokeDir\input", "$smokeDir\output" | Out-Null
 Copy-Item data\sample_tasks.json "$smokeDir\input\tasks.json" -Force
 docker run --rm -e FRUGAL_ALLOW_REMOTE=0 -v "$smokeDir\input:/input" -v "$smokeDir\output:/output" $image

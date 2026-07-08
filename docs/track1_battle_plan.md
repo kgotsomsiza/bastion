@@ -48,4 +48,4 @@ The container reads `/input/tasks.json` and writes `/output/results.json`. The h
 
 ## Submission Story
 
-FrugalRouter is not just a wrapper around an API. It is a cost-aware agent with task classification, model routing, deterministic zero-token shortcuts, Fireworks proxy compliance, and decision logging. Gemma usage is real whenever the allowed-model policy selects Gemma for a task category.
+Bastion is not just a wrapper around an API. It is a cost-aware agent with task classification, model routing, deterministic zero-token shortcuts, Fireworks proxy compliance, and decision logging. Gemma usage is real whenever the allowed-model policy selects Gemma for a task category.

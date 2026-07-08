@@ -1,4 +1,4 @@
-# Ask FrugalRouter a single prompt and see the route, model, tokens, and answer.
+# Ask Bastion a single prompt and see the route, model, tokens, and answer.
 #
 #   powershell -ExecutionPolicy Bypass -File scripts/ask.ps1 "What is 25% of 80? Return only the number."
 #   powershell -ExecutionPolicy Bypass -File scripts/ask.ps1 "Explain ROCm in one sentence." -Model accounts/fireworks/models/kimi-k2p7-code
