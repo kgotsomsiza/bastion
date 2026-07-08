@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 from typing import Any
 
@@ -39,6 +40,10 @@ class LocalModelProvider:
         self.n_threads = int(cfg.get("n_threads", os.cpu_count() or 2))
         self._llm: Any = None
         self._load_failed = False
+        # llama.cpp is not thread-safe; the CLI runs tasks in parallel workers,
+        # so all load + inference on the shared model must be serialized or it
+        # segfaults. Fireworks calls don't take this lock and stay parallel.
+        self._lock = threading.Lock()
 
     def available_for(self, category: str) -> bool:
         return category in self.categories and self._ensure_loaded()
@@ -46,34 +51,40 @@ class LocalModelProvider:
     def _ensure_loaded(self) -> bool:
         if self._llm is not None:
             return True
-        if self._load_failed or not self.model_path or not os.path.exists(self.model_path):
-            self._load_failed = True
+        if self._load_failed:
             return False
-        try:
-            from llama_cpp import Llama
+        with self._lock:
+            if self._llm is not None:
+                return True
+            if self._load_failed or not self.model_path or not os.path.exists(self.model_path):
+                self._load_failed = True
+                return False
+            try:
+                from llama_cpp import Llama
 
-            self._llm = Llama(
-                model_path=self.model_path,
-                n_ctx=self.n_ctx,
-                n_threads=self.n_threads,
-                verbose=False,
-            )
-            return True
-        except Exception:  # noqa: BLE001 - any load failure => fall back to remote
-            self._load_failed = True
-            return False
+                self._llm = Llama(
+                    model_path=self.model_path,
+                    n_ctx=self.n_ctx,
+                    n_threads=self.n_threads,
+                    verbose=False,
+                )
+                return True
+            except Exception:  # noqa: BLE001 - any load failure => fall back to remote
+                self._load_failed = True
+                return False
 
     def answer(self, task: Task, category: str = "general") -> Answer:
         started = time.perf_counter()
         instruction = CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
-        completion = self._llm.create_chat_completion(
-            messages=[
-                {"role": "system", "content": LOCAL_MODEL_SYSTEM},
-                {"role": "user", "content": f"{instruction}\n{task.input}"},
-            ],
-            temperature=0.0,
-            max_tokens=self.max_tokens,
-        )
+        with self._lock:
+            completion = self._llm.create_chat_completion(
+                messages=[
+                    {"role": "system", "content": LOCAL_MODEL_SYSTEM},
+                    {"role": "user", "content": f"{instruction}\n{task.input}"},
+                ],
+                temperature=0.0,
+                max_tokens=self.max_tokens,
+            )
         latency_ms = int((time.perf_counter() - started) * 1000)
         choice = completion["choices"][0]
         text = clean_answer((choice.get("message") or {}).get("content") or "", category)
