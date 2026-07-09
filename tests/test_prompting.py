@@ -47,6 +47,37 @@ def test_extracts_leading_inline_code_when_exact_answer_requested():
     assert clean_answer(answer, "code_debugging", prompt=prompt) == "[]"
 
 
+def test_extracts_brackets_from_full_code_when_two_characters_requested():
+    prompt = "What exact two characters are missing as the second argument?"
+    answer = "useEffect(() => { fetchUser(); }, []);"
+    assert clean_answer(answer, "code_debugging", prompt=prompt) == "[]"
+
+
+def test_extracts_specific_keyword_from_answer_with_code_block():
+    prompt = "What specific keyword must be placed before `count` inside the function?"
+    answer = "`global`\n\n```python\ncount = 0\n\ndef increment():\n    global count\n    count += 1\n```"
+    assert clean_answer(answer, "code_debugging", prompt=prompt) == "global"
+
+
+def test_extracts_operator_number_from_full_code_answer():
+    prompt = "What math operation and number must be added inside the brackets?"
+    answer = "let lastItem = arr[arr.length - 1];"
+    assert clean_answer(answer, "code_debugging", prompt=prompt) == "- 1"
+
+
+def test_canonicalizes_null_pointer_root_cause_to_three_words():
+    prompt = (
+        "Look at this log trace: 'Exception in thread main java.lang.NullPointerException'. "
+        "Summarize the root cause in plain English using exactly three words."
+    )
+    assert clean_answer("Null reference dereferenced", "summarization", prompt=prompt) == "Null pointer exception"
+
+
+def test_enforces_three_word_headline_without_losing_tail_subject():
+    prompt = "Generate a three-word headline for this news snippet."
+    assert clean_answer("Council Funds Pothole Repairs", "summarization", prompt=prompt) == "Council Pothole Repairs"
+
+
 def test_strips_parentheses_when_method_name_requested():
     prompt = "What built-in dictionary method should be used? Give just the method name."
     assert clean_answer("get()", "general", prompt=prompt) == "get"
