@@ -5,6 +5,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .env
+AGENT_CONTEXT.local.md
+MODEL_STRATEGY.local.md
 outputs/
 input/
 output/

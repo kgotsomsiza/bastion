@@ -68,6 +68,27 @@ def test_strips_parentheses_when_method_name_requested():
     assert clean_answer("get()", "general", prompt=prompt) == "get"
 
 
+def test_extracts_keyword_from_code_debugging_exact_prompt():
+    prompt = "What keyword should be added? Reply with only the keyword."
+    answer = "```python\ncount = 0\n\ndef increment():\n    global count\n    count += 1\n```\n\nThe keyword is **`global`**."
+    assert clean_answer(answer, "code_debugging", prompt=prompt) == "global"
+
+
+def test_extracts_numeric_literal_from_code_debugging_exact_prompt():
+    prompt = "What numeric literal should be used? Reply with exactly the literal."
+    assert clean_answer("double result = 5 / 2.0;", "code_debugging", prompt=prompt) == "2.0"
+
+
+def test_extracts_operation_from_code_debugging_exact_prompt():
+    prompt = "What exact operation should be applied to arr.length? Reply with only the operation."
+    assert clean_answer("let lastItem = arr[arr.length - 1];", "code_debugging", prompt=prompt) == "- 1"
+
+
+def test_extracts_two_character_fragment_from_code_debugging_exact_prompt():
+    prompt = "What exact two characters are missing from this React hook? Reply with exactly those two characters."
+    assert clean_answer("useEffect(() => { fetchUser(); }, []);", "code_debugging", prompt=prompt) == "[]"
+
+
 def test_formats_hhmm_time_when_requested():
     prompt = "Use HH:MM PM format."
     assert clean_answer("4:20 PM", "math", prompt=prompt) == "04:20 PM"

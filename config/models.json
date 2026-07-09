@@ -33,14 +33,14 @@
     "_comment": "Zero-token tier. Inert unless LOCAL_MODEL_PATH is set or model_path exists (baseline stays Fireworks-only). Categories are a starting guess for a 2-3B model - tune from a graded run before trusting hard categories (math/logic/code stay remote)."
   },
   "model_policy": {
-    "code_debugging": ["kimi-k2p7-code", "gemma-4-31b-it", "gemma-4-31b-it-nvfp4", "minimax-m3"],
-    "code_generation": ["kimi-k2p7-code", "gemma-4-31b-it", "gemma-4-31b-it-nvfp4", "minimax-m3"],
-    "math": ["gemma-4-31b-it", "gemma-4-31b-it-nvfp4", "minimax-m3", "gemma-4-26b-a4b-it"],
-    "logic": ["gemma-4-31b-it", "gemma-4-31b-it-nvfp4", "minimax-m3", "gemma-4-26b-a4b-it"],
-    "sentiment": ["gemma-4-26b-a4b-it", "gemma-4-31b-it-nvfp4", "gemma-4-31b-it", "minimax-m3"],
-    "summarization": ["gemma-4-26b-a4b-it", "gemma-4-31b-it-nvfp4", "gemma-4-31b-it", "minimax-m3"],
-    "ner": ["gemma-4-26b-a4b-it", "gemma-4-31b-it-nvfp4", "gemma-4-31b-it", "minimax-m3"],
-    "factual": ["gemma-4-31b-it-nvfp4", "gemma-4-31b-it", "gemma-4-26b-a4b-it", "minimax-m3"],
-    "general": ["gemma-4-31b-it-nvfp4", "gemma-4-31b-it", "gemma-4-26b-a4b-it", "minimax-m3"]
+    "code_debugging": ["kimi-k2p7-code", "gemma-4-31b-it", "minimax-m3", "gemma-4-31b-it-nvfp4", "gemma-4-26b-a4b-it"],
+    "code_generation": ["kimi-k2p7-code", "gemma-4-31b-it", "minimax-m3", "gemma-4-31b-it-nvfp4", "gemma-4-26b-a4b-it"],
+    "math": ["gemma-4-31b-it", "minimax-m3", "gemma-4-31b-it-nvfp4", "kimi-k2p7-code", "gemma-4-26b-a4b-it"],
+    "logic": ["gemma-4-31b-it", "minimax-m3", "gemma-4-31b-it-nvfp4", "kimi-k2p7-code", "gemma-4-26b-a4b-it"],
+    "sentiment": ["gemma-4-31b-it", "minimax-m3", "gemma-4-31b-it-nvfp4", "kimi-k2p7-code", "gemma-4-26b-a4b-it"],
+    "summarization": ["gemma-4-31b-it", "minimax-m3", "gemma-4-31b-it-nvfp4", "kimi-k2p7-code", "gemma-4-26b-a4b-it"],
+    "ner": ["gemma-4-31b-it", "minimax-m3", "gemma-4-31b-it-nvfp4", "kimi-k2p7-code", "gemma-4-26b-a4b-it"],
+    "factual": ["gemma-4-31b-it", "minimax-m3", "gemma-4-31b-it-nvfp4", "kimi-k2p7-code", "gemma-4-26b-a4b-it"],
+    "general": ["gemma-4-31b-it", "minimax-m3", "gemma-4-31b-it-nvfp4", "kimi-k2p7-code", "gemma-4-26b-a4b-it"]
   }
 }

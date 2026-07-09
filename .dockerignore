@@ -25,3 +25,5 @@ tests
 scripts
 data
 .env
+AGENT_CONTEXT.local.md
+MODEL_STRATEGY.local.md

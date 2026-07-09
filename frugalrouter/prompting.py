@@ -75,6 +75,8 @@ def clean_answer(text: str, category: str, prompt: str | None = None) -> str:
     answer = _extract_leading_inline_code_when_exact_requested(answer, prompt)
     answer = _strip_inline_code_ticks(answer)
     answer = _strip_bare_call_when_identifier_requested(answer, prompt)
+    if category == "code_debugging":
+        answer = _extract_code_debugging_exact_fragment(answer, prompt)
     answer = _format_time_when_hhmm_requested(answer, prompt)
 
     if category == "sentiment" and not prompt_wants_explanation(prompt) and not prompt_wants_structured_answer(prompt):
@@ -147,6 +149,52 @@ def _strip_bare_call_when_identifier_requested(text: str, prompt: str | None) ->
         return text
     match = re.fullmatch(r"([A-Za-z_][\w.-]*)\(\)", text.strip())
     return match.group(1) if match else text
+
+
+def _extract_code_debugging_exact_fragment(text: str, prompt: str | None) -> str:
+    if not prompt:
+        return text
+    prompt_text = prompt.lower()
+    stripped = text.strip()
+
+    if re.search(r"\bkeyword\b", prompt_text):
+        keyword_match = re.search(
+            r"\bkeyword\s+(?:is|should\s+be)\s+(?:\*\*)?`?([A-Za-z_]\w*)`?(?:\*\*)?",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        if keyword_match:
+            return keyword_match.group(1)
+        inline_identifiers = re.findall(r"`([A-Za-z_]\w*)`", stripped)
+        if inline_identifiers:
+            return inline_identifiers[-1]
+
+    if re.search(r"\b(?:literal|numeric literal|number)\b", prompt_text) and re.search(
+        r"\b(?:exact|exactly|only|just|nothing else)\b", prompt_text
+    ):
+        numbers = re.findall(r"\b\d+(?:\.\d+)?\b", stripped)
+        decimals = [number for number in numbers if "." in number]
+        if decimals:
+            return decimals[-1]
+        if numbers:
+            return numbers[-1]
+
+    if re.search(r"\b(?:two characters|exact characters|missing characters)\b", prompt_text):
+        for fragment in ("[]", "()", "{}", "<>"):
+            if fragment in stripped:
+                return fragment
+
+    if re.search(r"\b(?:operator|operation|subtract|add|multiply|divide)\b", prompt_text) and re.search(
+        r"\b(?:exact|exactly|only|just|what|which)\b", prompt_text
+    ):
+        operation_match = re.search(r"(?<![\w.])[-+*/]\s*\d+(?:\.\d+)?\b", stripped)
+        if operation_match:
+            return operation_match.group(0).strip()
+        operator_match = re.search(r"(?<![=!<>])(?:===|!==|==|!=|<=|>=|&&|\|\||[-+*/%<>])(?![=])", stripped)
+        if operator_match:
+            return operator_match.group(0)
+
+    return text
 
 
 def _format_time_when_hhmm_requested(text: str, prompt: str | None) -> str:
