@@ -83,7 +83,7 @@ class FireworksProvider:
         # Reasoning models can hit the token cap before emitting any final
         # content, leaving message without a "content" key.
         content = (first_choice.get("message") or {}).get("content") or ""
-        choice = clean_answer(content, category)
+        choice = clean_answer(content, category, prompt=task.input)
         usage = body.get("usage", {})
         return Answer(
             text=choice,

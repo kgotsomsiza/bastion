@@ -11,15 +11,15 @@ from frugalrouter.types import Task
 REASONING_CATEGORIES = {"math", "logic"}
 
 CATEGORY_INSTRUCTIONS = {
-    "factual": "Accurate, concise.",
-    "math": "Solve this step by step, showing your work. Then, on the final line, write 'FINAL ANSWER:' followed by only the answer.",
-    "sentiment": "Classify sentiment with one word: positive, negative, or neutral. Factual statements with no expressed opinion are neutral.",
-    "summarization": "Summarize faithfully; obey format.",
-    "ner": "Extract entities; preserve requested labels/format.",
-    "code_debugging": "Fix bug; corrected code; minimal explanation.",
-    "logic": "Reason through the constraints step by step. Then, on the final line, write 'FINAL ANSWER:' followed by only the answer.",
-    "code_generation": "Correct runnable code; code only unless asked.",
-    "general": "Answer exactly; be concise.",
+    "factual": "Answer accurately and concisely. Follow the requested format.",
+    "math": "Solve carefully. If the prompt asks for reasoning, include concise work. Put the final result on the last line as 'FINAL ANSWER:' followed by only the answer.",
+    "sentiment": "Classify sentiment. Follow the requested format. If no format is requested, use one word: positive, negative, or neutral.",
+    "summarization": "Summarize faithfully; obey the requested format and length.",
+    "ner": "Extract only the requested entities; preserve requested labels/format.",
+    "code_debugging": "Fix the bug. Output corrected code unless the prompt asks for explanation.",
+    "logic": "Reason carefully. If the prompt asks for reasoning, include concise work. Put the final result on the last line as 'FINAL ANSWER:' followed by only the answer.",
+    "code_generation": "Output correct runnable code only unless the prompt asks for explanation.",
+    "general": "Answer exactly and concisely. Follow the requested format.",
 }
 
 
@@ -61,17 +61,26 @@ def looks_like_reasoning_spill(text: str) -> bool:
     return bool(re.match(r"^(?:we need to|we need answer|the user wants|let me think)", stripped, flags=re.IGNORECASE))
 
 
-def clean_answer(text: str, category: str) -> str:
+def clean_answer(text: str, category: str, prompt: str | None = None) -> str:
     # Normalize invisible unicode spaces that break exact-match graders.
     answer = text.replace(" ", " ").replace(" ", " ").strip()
     answer = _strip_reasoning_blocks(answer)
-    if category in REASONING_CATEGORIES:
+    if category in REASONING_CATEGORIES and not prompt_wants_explanation(prompt):
         answer = _extract_final_answer(answer)
     for prefix in ("Answer:", "Final answer:", "Final:"):
         if answer.lower().startswith(prefix.lower()):
             answer = answer[len(prefix) :].strip()
 
     answer = _strip_single_code_fence(answer)
+    answer = _extract_leading_inline_code_when_exact_requested(answer, prompt)
+    answer = _strip_inline_code_ticks(answer)
+    answer = _strip_bare_call_when_identifier_requested(answer, prompt)
+    answer = _format_time_when_hhmm_requested(answer, prompt)
+
+    if category == "sentiment" and not prompt_wants_explanation(prompt) and not prompt_wants_structured_answer(prompt):
+        label = _extract_sentiment_label(answer)
+        if label:
+            return label
 
     if category not in {"code_generation", "code_debugging"}:
         answer = _strip_outer_quotes(answer)
@@ -107,3 +116,83 @@ def _strip_outer_quotes(text: str) -> str:
     if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
         return text[1:-1].strip()
     return text
+
+
+def _strip_inline_code_ticks(text: str) -> str:
+    match = re.match(r"^`([^`\r\n]+)`$", text.strip())
+    if match:
+        return match.group(1).strip()
+    return text
+
+
+def _extract_leading_inline_code_when_exact_requested(text: str, prompt: str | None) -> str:
+    if not prompt or not re.search(
+        r"\b(?:exact|exactly|only|just|nothing else|no extra text|give just|output just)\b",
+        prompt,
+        flags=re.IGNORECASE,
+    ):
+        return text
+    match = re.match(r"^`([^`\r\n]+)`(?:\s|$)", text.strip())
+    return match.group(1).strip() if match else text
+
+
+def _strip_bare_call_when_identifier_requested(text: str, prompt: str | None) -> str:
+    if not prompt:
+        return text
+    if not re.search(
+        r"\b(?:method name|keyword|property(?: name)?|tag name|command name|clause|one word|word only)\b",
+        prompt,
+        flags=re.IGNORECASE,
+    ):
+        return text
+    match = re.fullmatch(r"([A-Za-z_][\w.-]*)\(\)", text.strip())
+    return match.group(1) if match else text
+
+
+def _format_time_when_hhmm_requested(text: str, prompt: str | None) -> str:
+    if not prompt or not re.search(r"\bHH:MM\b", prompt, flags=re.IGNORECASE):
+        return text
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})\s*([AP]M)", text.strip(), flags=re.IGNORECASE)
+    if not match:
+        return text
+    hour, minute, suffix = match.groups()
+    return f"{int(hour):02d}:{minute} {suffix.upper()}"
+
+
+def _extract_sentiment_label(text: str) -> str | None:
+    stripped = text.strip()
+    patterns = [
+        r"^(positive|negative|neutral)\.?$",
+        r"^(positive|negative|neutral)\s*:",
+        r"^(?:the\s+)?sentiment\s+(?:is|:)\s*(positive|negative|neutral)\.?$",
+        r"^(?:answer|label)\s*:\s*(positive|negative|neutral)\.?$",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, stripped, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).lower()
+    return None
+
+
+def prompt_wants_explanation(prompt: str | None) -> bool:
+    if not prompt:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:explain|why|justify|justification|reason(?:ing|s)?|rationale|because|show\s+(?:your\s+)?work)\b",
+            prompt,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def prompt_wants_structured_answer(prompt: str | None) -> bool:
+    if not prompt:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:json|object|array|mapping|map|dictionary|valid\s+json|review\s+number|reviews?)\b",
+            prompt,
+            flags=re.IGNORECASE,
+        )
+    )
