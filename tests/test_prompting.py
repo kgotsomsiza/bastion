@@ -16,6 +16,22 @@ def test_no_reasoning_directive_appended():
     assert "Do not show reasoning" not in user_prompt(task, "factual")
 
 
+def test_sentiment_prompt_warns_about_target_and_mixed_phrasing():
+    task = Task(id="t", input="Evaluate the sentiment: I hated leaving this wonderful resort.")
+    prompt = user_prompt(task, "sentiment")
+
+    assert "target being asked about" in prompt
+    assert "mixed phrasing" in prompt
+
+
+def test_ner_prompt_preserves_exact_source_spans():
+    task = Task(id="t", input="Extract all dates: third of June, 2020.")
+    prompt = user_prompt(task, "ner")
+
+    assert "Preserve the exact source text spans" in prompt
+    assert "do not normalize dates" in prompt
+
+
 def test_reasoning_category_prompts_for_step_by_step():
     task = Task(id="t", input="A train travels 120 km in 2 hours; how long for 300 km?")
     # math/logic ask for working + a FINAL ANSWER marker, and ignore no_reasoning.

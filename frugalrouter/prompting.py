@@ -13,9 +13,9 @@ REASONING_CATEGORIES = {"math", "logic"}
 CATEGORY_INSTRUCTIONS = {
     "factual": "Answer accurately and concisely. Follow the requested format.",
     "math": "Solve carefully. If the prompt asks for reasoning, include concise work. Put the final result on the last line as 'FINAL ANSWER:' followed by only the answer.",
-    "sentiment": "Classify sentiment. Follow the requested format. If no format is requested, use one word: positive, negative, or neutral.",
+    "sentiment": "Classify the sentiment toward the target being asked about, not isolated words. Handle negation and mixed phrasing carefully. Matching expectations in a factual update is neutral. Follow the requested format.",
     "summarization": "Summarize faithfully; obey the requested format and length.",
-    "ner": "Extract only the requested entities; preserve requested labels/format.",
+    "ner": "Extract only the requested entities. Preserve the exact source text spans; do not normalize dates, names, or values unless asked.",
     "code_debugging": "Fix the bug. Output corrected code unless the prompt asks for explanation.",
     "logic": "Reason carefully. If the prompt asks for reasoning, include concise work. Put the final result on the last line as 'FINAL ANSWER:' followed by only the answer.",
     "code_generation": "Output correct runnable code only unless the prompt asks for explanation.",

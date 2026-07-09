@@ -33,6 +33,89 @@ def test_router_uses_local_for_direct_percentage():
     assert result.route == "local"
 
 
+def test_router_computes_us_state_missing_letter_fact():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=False)
+    task = Task(
+        id="test",
+        input="What is the only letter of the English alphabet that does not appear in the name of any U.S. state?",
+    )
+
+    result = router.run(task)
+
+    assert result.answer.text == "Q"
+    assert result.used_remote is False
+    assert result.route == "local"
+
+
+def test_router_computes_chained_power_strip_empty_outlets():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=False)
+    task = Task(
+        id="test",
+        input=(
+            "I have three identical power strips. Each strip has exactly 4 outlets. "
+            "I plug the first power strip into the single wall outlet. I then plug the second "
+            "strip into the first strip, and the third strip into the second strip. "
+            "How many total empty outlets remain available?"
+        ),
+    )
+
+    result = router.run(task)
+
+    assert result.answer.text == "10"
+    assert result.used_remote is False
+    assert result.route == "local"
+
+
+def test_router_computes_time_word_problem():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=False)
+    task = Task(
+        id="test",
+        input=(
+            "I started baking a roast at 2:15 PM. It requires 45 minutes of preparation time "
+            "before going into the oven, and then it needs to bake for 1 hour and 20 minutes. "
+            "What time is it completely done? Use HH:MM PM format."
+        ),
+    )
+
+    result = router.run(task)
+
+    assert result.answer.text == "04:20 PM"
+    assert result.used_remote is False
+    assert result.route == "local"
+
+
+def test_router_computes_weekday_from_reference_date():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=False)
+    task = Task(
+        id="test",
+        input=(
+            "Assume February 29th, 2024 is a Thursday. "
+            "What day of the week will February 29th, 2028 be? Output only the day."
+        ),
+    )
+
+    result = router.run(task)
+
+    assert result.answer.text == "Tuesday"
+    assert result.used_remote is False
+    assert result.route == "local"
+
+
+def test_router_does_not_guess_vague_power_strip_prompt():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=False)
+    task = Task(id="test", input="Explain what a power strip is and how many outlets it usually has.")
+
+    result = router.run(task)
+
+    assert result.answer.text == ""
+    assert result.route == "local_remote_disabled"
+
+
 def test_router_uses_local_for_exact_response_instruction():
     config = load_config("config/models.json")
     router = FrugalRouter(config=config, allow_remote=False)
