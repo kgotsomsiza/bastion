@@ -213,10 +213,21 @@ class LocalProvider:
         """
         if not re.search(r"\b(?:final|total|after)\b.*\b(?:price|cost|amount|pay)\b|\b(?:price|cost|amount)\b.*\bafter\b", prompt, flags=re.IGNORECASE | re.DOTALL):
             return None
+        # Any operation this solver does not model (splitting, per-person
+        # shares, comparisons) means the parse is incomplete: refuse.
+        if re.search(r"\b(?:split|divid\w*|among|between|each|per person|share[ds]?|apiece|evenly)\b", prompt, flags=re.IGNORECASE):
+            return None
         amounts = re.findall(r"\$\s*(\d+(?:\.\d+)?)", prompt)
         if len(amounts) != 1:
             return None
         value = float(amounts[0])
+        # Every number in the prompt must be either the base amount or one of
+        # the percentages; a stray number means unmodeled arithmetic.
+        percents = re.findall(r"(\d+(?:\.\d+)?)\s*%", prompt)
+        accounted = {amounts[0], *percents}
+        all_numbers = re.findall(r"\d+(?:\.\d+)?", prompt)
+        if any(n not in accounted for n in all_numbers):
+            return None
         operations = re.findall(
             r"\b(discount(?:ed)?|off|reduc\w+|markdown|tax|surcharge|fee|tip|increas\w+|markup)\b[^%]{0,40}?(\d+(?:\.\d+)?)\s*%"
             r"|(\d+(?:\.\d+)?)\s*%\s*(discount|off|tax|tip|surcharge|increase|markup)",

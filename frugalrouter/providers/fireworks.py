@@ -64,6 +64,9 @@ class FireworksProvider:
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
+                # Cloudflare intermittently bans urllib's default UA (error 1010);
+                # any explicit client identity passes.
+                "User-Agent": "bastion-router/1.0",
             },
             method="POST",
         )
