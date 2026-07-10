@@ -504,10 +504,11 @@ def test_model_policy_uses_allowed_models_from_harness():
     assert policy.choose("factual") == "accounts/fireworks/models/minimax-m3"
 
 
-def test_model_policy_routes_all_logic_to_primary_with_reasoning():
-    # V13: the Kimi one-shot logic specialist produced 5 of the 9 blind-set
-    # failures; with brief written reasoning restored, all logic goes to the
-    # V11-proven primary and the specialist patterns are disabled.
+def test_model_policy_logic_routing_specialist_only_for_syllogisms():
+    # V13: most logic goes to the primary with brief written reasoning (the
+    # broad Kimi one-shot specialist produced 5 of the 9 blind failures), but
+    # premise-based syllogisms stay on Kimi, which is measured to follow the
+    # UNKNOWN-when-undetermined convention.
     config = load_config("config/models.json")
     config["allowed_models"] = [
         "accounts/fireworks/models/gemma-4-31b-it",
@@ -515,7 +516,7 @@ def test_model_policy_routes_all_logic_to_primary_with_reasoning():
     ]
     policy = ModelPolicy(config)
 
-    assert policy.choose("logic", "Premise 1: All A are B. Are all A also C?").endswith("gemma-4-31b-it")
+    assert policy.choose("logic", "Premise 1: All A are B. Are all A also C?").endswith("kimi-k2p7-code")
     assert policy.choose("logic", "Every box is incorrectly labeled. Which is Apples?").endswith("gemma-4-31b-it")
     assert policy.choose("logic", "The day before yesterday was Tuesday. What day is tomorrow?").endswith(
         "gemma-4-31b-it"
