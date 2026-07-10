@@ -32,9 +32,12 @@ def user_prompt(task: Task, category: str, no_reasoning: bool = False) -> str:
                 "Solve accurately. Include only the essential calculation requested, then put the final result "
                 f"on the last line as 'FINAL ANSWER:' followed by the answer.\n{task.input}{format_hint}"
             )
+        # Brief WRITTEN reasoning: multi-step math/logic fails one-shot (V12 lost
+        # 4 hidden tasks this way), while full hidden thinking costs ~1k tokens a
+        # task (V11). Compact visible steps recover the accuracy at ~1/8 the cost.
         return (
-            "Solve accurately and silently. Return only the requested final value. "
-            f"No steps, derivation, or explanation.\n{task.input}{format_hint}\nAnswer:"
+            "Reason in brief steps (under 50 words), then on the last line write "
+            f"'FINAL ANSWER:' followed by only the answer.\n{task.input}{format_hint}"
         )
     directive = "\nDo not show reasoning or thoughts. Output only the final answer." if no_reasoning else ""
     return f"{instruction}\n{task.input}{format_hint}{directive}\nAnswer:"

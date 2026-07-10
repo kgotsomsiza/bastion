@@ -3,26 +3,21 @@
   "remote_required_by_default": true,
   "remote_max_attempts": 4,
   "remote_backoff_seconds": 2.0,
-  "retry_truncated": false,
+  "retry_truncated": true,
   "include_all_allowed_fallbacks": false,
-  "logic_specialist_patterns": [
-    "\\bpremise\\b",
-    "\\b(?:(?:incorrectly|wrongly)\\s+label(?:ed|led|s)?|mislabel(?:ed|led|s)?)\\b",
-    "\\b(?:day before yesterday|day after tomorrow|if yesterday|if tomorrow)\\b",
-    "\\b(?:false|true) logs?\\b"
-  ],
+  "logic_specialist_patterns": [],
   "fireworks": {
     "base_url": "https://api.fireworks.ai/inference/v1",
     "default_model": "gemma-4-31b-it",
     "temperature": 0.0,
     "max_tokens": {
       "factual": 64,
-      "math": 96,
+      "math": 288,
       "sentiment": 64,
       "summarization": 128,
       "ner": 96,
       "code_debugging": 128,
-      "logic": 96,
+      "logic": 288,
       "code_generation": 128,
       "general": 96
     }

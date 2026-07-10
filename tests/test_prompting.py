@@ -32,12 +32,15 @@ def test_ner_prompt_preserves_exact_source_spans():
     assert "do not normalize dates" in prompt
 
 
-def test_reasoning_category_requests_only_final_answer_by_default():
+def test_reasoning_category_uses_brief_written_reasoning_by_default():
+    # V13: one-shot silent answers lost hidden math/logic tasks (V12 = 14/19),
+    # while unbounded hidden thinking cost ~1k tokens/task (V11 = 14,903 total).
+    # Brief written steps ending in FINAL ANSWER recover accuracy cheaply.
     task = Task(id="t", input="A train travels 120 km in 2 hours; how long for 300 km?")
     for cat in ("math", "logic"):
         prompt = user_prompt(task, cat, no_reasoning=True)
-        assert "Solve accurately and silently" in prompt
-        assert "Return only the requested final value" in prompt
+        assert "brief steps" in prompt
+        assert "FINAL ANSWER" in prompt
 
 
 def test_reasoning_category_preserves_requested_explanation():
@@ -45,7 +48,6 @@ def test_reasoning_category_preserves_requested_explanation():
     for cat in ("math", "logic"):
         prompt = user_prompt(task, cat)
         assert "FINAL ANSWER" in prompt
-        assert "Solve accurately and silently" not in prompt
 
 
 def test_reasoning_category_extracts_final_answer():

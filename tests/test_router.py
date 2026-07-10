@@ -504,7 +504,10 @@ def test_model_policy_uses_allowed_models_from_harness():
     assert policy.choose("factual") == "accounts/fireworks/models/minimax-m3"
 
 
-def test_model_policy_uses_kimi_for_measured_logic_specialties():
+def test_model_policy_routes_all_logic_to_primary_with_reasoning():
+    # V13: the Kimi one-shot logic specialist produced 5 of the 9 blind-set
+    # failures; with brief written reasoning restored, all logic goes to the
+    # V11-proven primary and the specialist patterns are disabled.
     config = load_config("config/models.json")
     config["allowed_models"] = [
         "accounts/fireworks/models/gemma-4-31b-it",
@@ -512,12 +515,12 @@ def test_model_policy_uses_kimi_for_measured_logic_specialties():
     ]
     policy = ModelPolicy(config)
 
-    assert policy.choose("logic", "Premise 1: All A are B. Are all A also C?").endswith("kimi-k2p7-code")
-    assert policy.choose("logic", "Every box is incorrectly labeled. Which is Apples?").endswith("kimi-k2p7-code")
+    assert policy.choose("logic", "Premise 1: All A are B. Are all A also C?").endswith("gemma-4-31b-it")
+    assert policy.choose("logic", "Every box is incorrectly labeled. Which is Apples?").endswith("gemma-4-31b-it")
     assert policy.choose("logic", "The day before yesterday was Tuesday. What day is tomorrow?").endswith(
-        "kimi-k2p7-code"
+        "gemma-4-31b-it"
     )
-    assert policy.choose("logic", "Server A writes false logs on odd days.").endswith("kimi-k2p7-code")
+    assert policy.choose("logic", "Server A writes false logs on odd days.").endswith("gemma-4-31b-it")
 
 
 def test_model_policy_keeps_gemma_for_ordering_logic():
@@ -553,12 +556,14 @@ def test_v12_policy_uses_only_the_two_measured_models():
     ]
 
 
-def test_v12_remote_output_caps_leave_room_for_input_tokens():
+def test_v13_remote_output_caps_stay_lean_outside_reasoning():
+    # V13: only math/logic get headroom for brief written reasoning; every
+    # other category keeps V12's lean caps.
     config = load_config("config/models.json")
     caps = config["fireworks"]["max_tokens"]
 
-    assert max(caps.values()) <= 128
-    assert 19 * max(caps.values()) <= 2432
+    assert max(caps[cat] for cat in ("math", "logic")) <= 320
+    assert max(v for k, v in caps.items() if k not in {"math", "logic"}) <= 128
 
 
 def test_track1_json_io_contract(tmp_path):
