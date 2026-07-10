@@ -11,12 +11,12 @@ from frugalrouter.types import Task
 REASONING_CATEGORIES = {"math", "logic"}
 
 CATEGORY_INSTRUCTIONS = {
-    "factual": "Answer accurately and concisely. Follow the requested format.",
+    "factual": "Answer concisely; follow the requested format.",
     "math": "Solve carefully. If the prompt asks for reasoning, include concise work. Put the final result on the last line as 'FINAL ANSWER:' followed by only the answer.",
-    "sentiment": "Classify the sentiment toward the target being asked about, not isolated words. Handle negation and mixed phrasing carefully. Matching expectations in a factual update is neutral. Follow the requested format.",
+    "sentiment": "Classify sentiment of the asked-about target; mind negation and mixed phrasing. Plain factual updates are neutral. Follow the requested format.",
     "summarization": "Summarize faithfully; obey the requested format and length.",
-    "ner": "Extract only the requested entities. Preserve the exact source text spans; do not normalize dates, names, or values unless asked.",
-    "code_debugging": "Diagnose or fix exactly what is requested. If asked for a flaw, property, keyword, character, or operation, answer that directly. Output corrected code only when explicitly requested.",
+    "ner": "Extract only the requested entities; keep exact source spans, do not normalize.",
+    "code_debugging": "Answer exactly what is asked (flaw, keyword, character, operation); corrected code only if requested.",
     "logic": "Reason carefully. If the prompt asks for reasoning, include concise work. Put the final result on the last line as 'FINAL ANSWER:' followed by only the answer.",
     "code_generation": "Output correct runnable code only unless the prompt asks for explanation.",
     "general": "Answer exactly and concisely. Follow the requested format.",
@@ -35,9 +35,16 @@ def user_prompt(task: Task, category: str, no_reasoning: bool = False) -> str:
         # Brief WRITTEN reasoning: multi-step math/logic fails one-shot (V12 lost
         # 4 hidden tasks this way), while full hidden thinking costs ~1k tokens a
         # task (V11). Compact visible steps recover the accuracy at ~1/8 the cost.
+        # Syllogism convention: when UNKNOWN is an offered option, undeterminable
+        # conclusions are UNKNOWN, not NO.
+        unknown_hint = (
+            " If the premises do not force the conclusion, answer UNKNOWN rather than NO."
+            if re.search(r"\bUNKNOWN\b", task.input)
+            else ""
+        )
         return (
-            "Reason in brief steps (under 50 words), then on the last line write "
-            f"'FINAL ANSWER:' followed by only the answer.\n{task.input}{format_hint}"
+            f"Reason briefly (max 30 words). Last line: 'FINAL ANSWER: <answer>'.{unknown_hint}"
+            f"\n{task.input}{format_hint}"
         )
     directive = "\nDo not show reasoning or thoughts. Output only the final answer." if no_reasoning else ""
     return f"{instruction}\n{task.input}{format_hint}{directive}\nAnswer:"
@@ -76,6 +83,9 @@ def clean_answer(text: str, category: str, prompt: str | None = None) -> str:
     answer = _strip_reasoning_blocks(answer)
     if category in REASONING_CATEGORIES and not prompt_wants_explanation(prompt):
         answer = _extract_final_answer(answer)
+        # Reasoning answers may come out LaTeX-styled (e.g. "4\pi"); plain text
+        # is safer for any grader.
+        answer = answer.replace("\\pi", "pi").replace("π", "pi").strip("$ ").strip()
     for prefix in ("Answer:", "Final answer:", "Final:"):
         if answer.lower().startswith(prefix.lower()):
             answer = answer[len(prefix) :].strip()
@@ -236,6 +246,16 @@ def _extract_code_debugging_exact_fragment(text: str, prompt: str | None) -> str
         operation_match = re.search(r"(?<![\w.])[-+*/]\s*\d+(?:\.\d+)?\b", stripped)
         if operation_match:
             return operation_match.group(0).strip()
+        # Models sometimes word the operation out ("Operation: subtraction,
+        # Number: 1"); canonicalize to the symbolic form the prompt wants.
+        worded_operation = re.search(
+            r"\b(subtract\w*|add(?:ition)?|multipl\w*|divi(?:de|sion)\w*)\b\W*(?:\w+\W+){0,3}?(\d+(?:\.\d+)?)",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        if worded_operation:
+            symbol = {"s": "-", "a": "+", "m": "*", "d": "/"}[worded_operation.group(1)[0].lower()]
+            return f"{symbol} {worded_operation.group(2)}"
         operator_match = re.search(r"(?<![=!<>])(?:===|!==|==|!=|<=|>=|&&|\|\||[-+*/%<>])(?![=])", stripped)
         if operator_match:
             return operator_match.group(0)
@@ -250,6 +270,10 @@ def _extract_requested_corrected_line(text: str, prompt: str | None) -> str:
         flags=re.IGNORECASE,
     ):
         return text
+    # Models often reply "Corrected first line: `code`" - take the backticked code.
+    labeled = re.search(r"(?:corrected|fixed)[^:`\r\n]*:\s*`([^`\r\n]+)`", text, flags=re.IGNORECASE)
+    if labeled:
+        return labeled.group(1).strip()
     fenced = re.search(r"```[a-zA-Z0-9_+-]*\r?\n(.*?)\r?\n?```", text, flags=re.DOTALL)
     candidate = fenced.group(1).strip() if fenced else text.strip()
     lines = [line.strip() for line in candidate.splitlines() if line.strip()]

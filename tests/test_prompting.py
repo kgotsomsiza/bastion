@@ -20,16 +20,16 @@ def test_sentiment_prompt_warns_about_target_and_mixed_phrasing():
     task = Task(id="t", input="Evaluate the sentiment: I hated leaving this wonderful resort.")
     prompt = user_prompt(task, "sentiment")
 
-    assert "target being asked about" in prompt
-    assert "mixed phrasing" in prompt
+    assert "asked-about target" in prompt
+    assert "negation and mixed phrasing" in prompt
 
 
 def test_ner_prompt_preserves_exact_source_spans():
     task = Task(id="t", input="Extract all dates: third of June, 2020.")
     prompt = user_prompt(task, "ner")
 
-    assert "Preserve the exact source text spans" in prompt
-    assert "do not normalize dates" in prompt
+    assert "exact source spans" in prompt
+    assert "do not normalize" in prompt
 
 
 def test_reasoning_category_uses_brief_written_reasoning_by_default():
@@ -39,7 +39,7 @@ def test_reasoning_category_uses_brief_written_reasoning_by_default():
     task = Task(id="t", input="A train travels 120 km in 2 hours; how long for 300 km?")
     for cat in ("math", "logic"):
         prompt = user_prompt(task, cat, no_reasoning=True)
-        assert "brief steps" in prompt
+        assert "Reason briefly" in prompt
         assert "FINAL ANSWER" in prompt
 
 
