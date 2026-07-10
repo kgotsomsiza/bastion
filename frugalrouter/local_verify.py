@@ -51,6 +51,11 @@ def _verify_sentiment(prompt: str, lowered_answer: str) -> bool:
     # recommendation questions are subjective and stay remote.
     if not re.search(r"positive|negative|neutral", prompt, flags=re.IGNORECASE):
         return False
+    # Contrast or negation in the text signals nuance (mixed reviews, double
+    # negatives like "wasn't the worst... but") - measured to trip the local
+    # model, so those stay remote. Straightforward emotional language only.
+    if re.search(r"\b(?:but|however|although|though|yet|not|never|hardly|barely)\b|n't\b", prompt, flags=re.IGNORECASE):
+        return False
     return lowered_answer.strip(". ") in SENTIMENT_LABELS
 
 
