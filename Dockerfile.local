@@ -26,7 +26,9 @@ RUN python -m pip install --no-cache-dir --no-index --find-links=/wheels llama-c
  && rm -rf /wheels
 
 # Bundle the pre-downloaded model (build context must contain models/).
-COPY models/Qwen2.5-3B-Instruct-Q4_K_M.gguf /app/models/model.gguf
+# 0.5B Q8: the 3B was measured at 5+ min/task under the 2 vCPU judge limit;
+# the 0.5B fits the runtime budget and its answers are verification-gated.
+COPY models/Qwen2.5-0.5B-Instruct-Q8_0.gguf /app/models/model.gguf
 
 COPY frugalrouter ./frugalrouter
 COPY config ./config

@@ -4,6 +4,7 @@ from dataclasses import replace
 import time
 
 from frugalrouter.evaluation.verifier import LocalVerifier
+from frugalrouter.local_verify import verify_local_answer
 from frugalrouter.model_policy import ModelPolicy
 from frugalrouter.prompting import REASONING_CATEGORIES, clean_answer, looks_like_reasoning_spill
 from frugalrouter.providers.fireworks import FireworksError, FireworksProvider
@@ -61,13 +62,20 @@ class FrugalRouter:
 
         # Zero-token tier 2: a bundled small model answers gated easy
         # categories for free. Skipped entirely (no-op) when no model is
-        # present, so the Fireworks-only baseline is unchanged.
+        # present, so the Fireworks-only baseline is unchanged. Every answer
+        # must pass deterministic verification (verify_local_answer) or the
+        # task falls through to remote: a rejected local answer costs only
+        # the tokens we would have spent anyway, a wrong one risks the gate.
         if self.local_model.available_for(category):
             try:
                 lm_answer = self.local_model.answer(task, category=category)
             except Exception:  # noqa: BLE001 - never let a local-model bug kill the task
                 lm_answer = None
-            if lm_answer is not None and lm_answer.text.strip():
+            if (
+                lm_answer is not None
+                and lm_answer.text.strip()
+                and verify_local_answer(task.input, category, lm_answer.text)
+            ):
                 lm_verification = self.verifier.score(task, lm_answer)
                 return RouteResult(
                     task_id=task.id,

@@ -434,16 +434,19 @@ def test_router_solves_missing_loop_update_locally():
     assert result.answer.text == "i++"
 
 
-def test_router_uses_local_model_for_gated_category():
+def test_router_uses_local_model_for_verified_answer():
+    # V14: local-model answers ship only when verify_local_answer accepts them
+    # (sentiment/ner/summarization with checkable output); factual and other
+    # unverifiable categories always fall through to remote.
     config = load_config("config/models.json")
     router = FrugalRouter(config=config, allow_remote=True)
 
     class FakeLocalModel:
         def available_for(self, category):
-            return category == "factual"
+            return category == "sentiment"
 
         def answer(self, task, category="general"):
-            return Answer(text="Canberra", provider="local_model", model="fake-2b")
+            return Answer(text="negative", provider="local_model", model="fake-0.5b")
 
     class ExplodingRemote:
         def answer(self, *a, **k):
@@ -452,11 +455,38 @@ def test_router_uses_local_model_for_gated_category():
     router.local_model = FakeLocalModel()
     router.remote = ExplodingRemote()
 
-    result = router.run(Task(id="t", input="What is the capital of Australia?"))
+    result = router.run(
+        Task(id="t", input="Classify the sentiment as positive, negative, or neutral: The support team ignored my emails for a week.")
+    )
 
     assert result.route == "local_model"
     assert result.used_remote is False
-    assert result.answer.text == "Canberra"
+    assert result.answer.text == "negative"
+
+
+def test_router_rejects_unverified_local_model_answer():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    class FakeLocalModel:
+        def available_for(self, category):
+            return category == "ner"
+
+        def answer(self, task, category="general"):
+            # Invented span not present in the source: verification must block it.
+            return Answer(text="Robert", provider="local_model", model="fake-0.5b")
+
+    class OkRemote:
+        def answer(self, task, model=None, category="general", **kwargs):
+            return Answer(text="Alice", provider="fireworks", model=model or "remote")
+
+    router.local_model = FakeLocalModel()
+    router.remote = OkRemote()
+
+    result = router.run(Task(id="t", input="Extract all person names: Alice went home."))
+
+    assert result.route == "remote"
+    assert result.answer.text == "Alice"
 
 
 def test_router_falls_back_to_remote_when_local_model_empty():

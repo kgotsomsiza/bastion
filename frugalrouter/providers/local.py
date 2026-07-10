@@ -153,12 +153,89 @@ class LocalProvider:
         if time_answer is not None:
             return time_answer, 0.98, ["computed_time_word_problem"]
 
+        sequence = self._number_sequence(prompt)
+        if sequence is not None:
+            return sequence, 0.98, ["computed_number_sequence"]
+
+        percent = self._percent_chain(prompt)
+        if percent is not None:
+            return percent, 0.98, ["computed_percent_chain"]
+
         math_answer = solve_simple_math(prompt)
         if math_answer is not None:
             text, reason = math_answer
             return text, 0.97, [reason]
 
         return "", 0.0, ["no_local_shortcut"]
+
+    def _number_sequence(self, prompt: str) -> str | None:
+        """Next number in a sequence, only for exactly-recognized patterns.
+
+        Requires >=4 terms and fires only when one of the classic generators
+        (constant difference, constant ratio, constant second difference,
+        Fibonacci-style sum) reproduces the WHOLE sequence; anything fuzzier
+        goes to the remote model.
+        """
+        if not re.search(r"\bnext\s+(?:number|term)\b", prompt, flags=re.IGNORECASE):
+            return None
+        if not re.search(r"\bsequence|series\b", prompt, flags=re.IGNORECASE):
+            return None
+        tail = prompt.split(":", 1)[1] if ":" in prompt else prompt
+        numbers = [float(n) for n in re.findall(r"-?\d+(?:\.\d+)?", tail)]
+        if len(numbers) < 4:
+            return None
+
+        def fmt(value: float) -> str:
+            return str(int(value)) if float(value).is_integer() else f"{value:g}"
+
+        diffs = [b - a for a, b in zip(numbers, numbers[1:])]
+        if len(set(diffs)) == 1:
+            return fmt(numbers[-1] + diffs[0])
+        if all(n != 0 for n in numbers):
+            ratios = [b / a for a, b in zip(numbers, numbers[1:])]
+            if all(abs(r - ratios[0]) < 1e-9 for r in ratios):
+                return fmt(numbers[-1] * ratios[0])
+        second = [b - a for a, b in zip(diffs, diffs[1:])]
+        if len(second) >= 2 and len(set(second)) == 1:
+            return fmt(numbers[-1] + diffs[-1] + second[0])
+        if len(numbers) >= 4 and all(
+            abs(numbers[i] - (numbers[i - 1] + numbers[i - 2])) < 1e-9 for i in range(2, len(numbers))
+        ):
+            return fmt(numbers[-1] + numbers[-2])
+        return None
+
+    def _percent_chain(self, prompt: str) -> str | None:
+        """Price after discount/tax chains, e.g. '$80, 25% off, then 10% tax'.
+
+        Fires only when there is exactly one base amount, at least one
+        percentage operation, and every percentage in the prompt is matched to
+        a recognized operation - partial parses fall through to remote.
+        """
+        if not re.search(r"\b(?:final|total|after)\b.*\b(?:price|cost|amount|pay)\b|\b(?:price|cost|amount)\b.*\bafter\b", prompt, flags=re.IGNORECASE | re.DOTALL):
+            return None
+        amounts = re.findall(r"\$\s*(\d+(?:\.\d+)?)", prompt)
+        if len(amounts) != 1:
+            return None
+        value = float(amounts[0])
+        operations = re.findall(
+            r"\b(discount(?:ed)?|off|reduc\w+|markdown|tax|surcharge|fee|tip|increas\w+|markup)\b[^%]{0,40}?(\d+(?:\.\d+)?)\s*%"
+            r"|(\d+(?:\.\d+)?)\s*%\s*(discount|off|tax|tip|surcharge|increase|markup)",
+            prompt,
+            flags=re.IGNORECASE,
+        )
+        total_percents = len(re.findall(r"\d+(?:\.\d+)?\s*%|\bpercent\b", prompt, flags=re.IGNORECASE))
+        if not operations or len(operations) != total_percents:
+            return None
+        decrease_words = {"discount", "discounted", "off", "markdown"}
+        for op in operations:
+            word = (op[0] or op[3]).lower()
+            percent = float(op[1] or op[2])
+            base_word = re.sub(r"(ed|es|s)$", "", word)
+            if word in decrease_words or base_word.startswith(("reduc", "markdown", "discount")):
+                value *= 1 - percent / 100
+            else:
+                value *= 1 + percent / 100
+        return str(int(round(value))) if abs(value - round(value)) < 0.005 else f"{value:.2f}"
 
     NEGATION_MARKERS = {"not", "never", "no", "hardly", "barely", "isn't", "wasn't", "aren't", "won't", "don't", "doesn't", "didn't", "can't", "couldn't", "nothing", "neither", "nor", "lacks", "without"}
 

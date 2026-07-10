@@ -30,12 +30,12 @@
   },
   "local_model": {
     "model_path": "/app/models/model.gguf",
-    "model_label": "qwen2.5-3b-q4",
-    "categories": ["sentiment", "summarization", "ner", "factual", "general"],
-    "max_tokens": 256,
-    "n_ctx": 2048,
+    "model_label": "qwen2.5-0.5b-q8",
+    "categories": ["sentiment", "summarization", "ner"],
+    "max_tokens": 128,
+    "n_ctx": 4096,
     "n_threads": 2,
-    "_comment": "Zero-token tier. Inert unless LOCAL_MODEL_PATH is set or model_path exists (baseline stays Fireworks-only). Categories are a starting guess for a 2-3B model - tune from a graded run before trusting hard categories (math/logic/code stay remote)."
+    "_comment": "Zero-token tier: 0.5B Q8 (fast enough for 2 vCPU; 3B measured way over the 30s/request budget). Only categories whose answers pass deterministic verification (local_verify.py) ship locally; anything unverifiable falls through to remote. math/logic/code/factual stay remote."
   },
   "model_policy": {
     "code_debugging": ["kimi-k2p7-code", "gemma-4-31b-it"],
