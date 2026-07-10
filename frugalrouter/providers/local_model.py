@@ -21,10 +21,6 @@ LOCAL_CATEGORY_INSTRUCTIONS = {
     "sentiment": (
         "Respond with exactly one word - positive, negative, or neutral - and nothing else."
     ),
-    "ner": (
-        "Return only the requested entities, comma-separated, each spelled exactly as it "
-        "appears in the text. No labels, no extra words."
-    ),
     "summarization": (
         "Write the summary in your own compressed words (do not copy a sentence verbatim). "
         "Obey any stated word or sentence limit exactly. Output only the summary."

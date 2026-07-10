@@ -69,7 +69,14 @@ def _verify_ner(prompt: str, answer: str) -> bool:
     if not items:
         return False
     source = prompt.lower()
-    return all(item.lower() in source for item in items)
+    # Clean-boundary match: a bare "50" must not pass because "$50" appears in
+    # the source - the surrounding characters must not be part of the span.
+    import re as _re
+    for item in items:
+        pattern = _re.escape(item.lower())
+        if not _re.search(rf"(?<![\w$€£#.]){pattern}(?![\w%])", source):
+            return False
+    return True
 
 
 def _verify_summary(prompt: str, answer: str) -> bool:
