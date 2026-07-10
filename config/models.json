@@ -30,12 +30,12 @@
   },
   "local_model": {
     "model_path": "/app/models/model.gguf",
-    "model_label": "qwen2.5-0.5b-q8",
+    "model_label": "qwen2.5-3b-q4",
     "categories": ["sentiment", "summarization", "ner"],
     "max_tokens": 128,
     "n_ctx": 4096,
     "n_threads": 2,
-    "_comment": "Zero-token tier: 0.5B Q8 (fast enough for 2 vCPU; 3B measured way over the 30s/request budget). Only categories whose answers pass deterministic verification (local_verify.py) ship locally; anything unverifiable falls through to remote. math/logic/code/factual stay remote."
+    "_comment": "Zero-token tier: 3B Q4. Judge-box-twin droplet (2 shared vCPU, 4GB) measured load 5.3s, worst task 15.4s - the earlier 5min/task laptop number was a dev-machine artifact. Verified accuracy there: sentiment 9/9, ner 14/14. Only verification-passing answers ship; everything else stays remote. factual/math/logic/code remote."
   },
   "model_policy": {
     "code_debugging": ["kimi-k2p7-code", "gemma-4-31b-it"],

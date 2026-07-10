@@ -73,6 +73,15 @@ def _verify_ner(prompt: str, answer: str) -> bool:
 
 
 def _verify_summary(prompt: str, answer: str) -> bool:
+    # A verbatim run of the source is extraction, not summarization - real
+    # summaries compress. Six-plus consecutive source words = reject.
+    answer_norm = " ".join(re.findall(r"[a-z]+", answer.lower()))
+    prompt_norm = " ".join(re.findall(r"[a-z]+", prompt.lower()))
+    answer_tokens = answer_norm.split()
+    for start in range(max(1, len(answer_tokens) - 5)):
+        if " ".join(answer_tokens[start : start + 6]) in prompt_norm:
+            return False
+
     # Local summaries must stay grounded: most content words should come from
     # the source passage. Abstractive drift goes remote instead of shipping.
     source_words = set(re.findall(r"[a-z]+", prompt.lower()))

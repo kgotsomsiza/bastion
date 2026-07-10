@@ -26,9 +26,9 @@ RUN python -m pip install --no-cache-dir --no-index --find-links=/wheels llama-c
  && rm -rf /wheels
 
 # Bundle the pre-downloaded model (build context must contain models/).
-# 0.5B Q8: the 3B was measured at 5+ min/task under the 2 vCPU judge limit;
-# the 0.5B fits the runtime budget and its answers are verification-gated.
-COPY models/Qwen2.5-0.5B-Instruct-Q8_0.gguf /app/models/model.gguf
+# 3B Q4: on a judge-box-twin cloud droplet (2 shared vCPU / 4 GB) it loads in
+# 5.3s and answers in 2-15s/task; the laptop's 5min/task was a dev artifact.
+COPY models/Qwen2.5-3B-Instruct-Q4_K_M.gguf /app/models/model.gguf
 
 COPY frugalrouter ./frugalrouter
 COPY config ./config

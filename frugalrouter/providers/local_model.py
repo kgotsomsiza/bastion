@@ -14,6 +14,23 @@ LOCAL_MODEL_SYSTEM = (
     "no explanation unless asked, and no restating of the question."
 )
 
+# Constraint-explicit instructions raise the verification acceptance rate:
+# every rejected local answer still costs a remote call, so compliant output
+# is what makes this tier pay for itself.
+LOCAL_CATEGORY_INSTRUCTIONS = {
+    "sentiment": (
+        "Respond with exactly one word - positive, negative, or neutral - and nothing else."
+    ),
+    "ner": (
+        "Return only the requested entities, comma-separated, each spelled exactly as it "
+        "appears in the text. No labels, no extra words."
+    ),
+    "summarization": (
+        "Write the summary in your own compressed words (do not copy a sentence verbatim). "
+        "Obey any stated word or sentence limit exactly. Output only the summary."
+    ),
+}
+
 
 class LocalModelProvider:
     """A small GGUF model run on-CPU via llama-cpp-python.
@@ -75,7 +92,9 @@ class LocalModelProvider:
 
     def answer(self, task: Task, category: str = "general") -> Answer:
         started = time.perf_counter()
-        instruction = CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
+        instruction = LOCAL_CATEGORY_INSTRUCTIONS.get(
+            category, CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
+        )
         with self._lock:
             completion = self._llm.create_chat_completion(
                 messages=[
