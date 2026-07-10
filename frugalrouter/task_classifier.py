@@ -31,6 +31,8 @@ def classify_prompt(prompt: str) -> str:
             "unboundlocalerror",
             "infinite loop",
             "infinite cycle",
+            "loop freezes",
+            "operation is missing inside the loop",
             "critical flaw",
             "conceptual bug",
             "effectively ignored",

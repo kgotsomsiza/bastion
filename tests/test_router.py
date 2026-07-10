@@ -287,6 +287,7 @@ def test_router_moves_to_next_model_after_exhausting_retries():
 def test_router_rescues_truncated_nonempty_answer():
     config = load_config("config/models.json")
     config["remote_backoff_seconds"] = 0.001
+    config["retry_truncated"] = True
     router = FrugalRouter(config=config, allow_remote=True)
 
     class SpilledReasoningProvider:
@@ -354,6 +355,7 @@ def test_router_retries_400_without_model_overrides():
 def test_router_rescues_empty_answer_at_token_cap():
     config = load_config("config/models.json")
     config["remote_backoff_seconds"] = 0.001
+    config["retry_truncated"] = True
     router = FrugalRouter(config=config, allow_remote=True)
 
     seen_overrides = []
@@ -372,6 +374,64 @@ def test_router_rescues_empty_answer_at_token_cap():
     assert result.route == "remote"
     assert result.answer.text == "rescued"
     assert seen_overrides == [None, 900]
+
+
+def test_router_does_not_retry_truncation_in_compact_mode():
+    config = load_config("config/models.json")
+    config["retry_truncated"] = False
+    router = FrugalRouter(config=config, allow_remote=True)
+    seen_overrides = []
+
+    class CappedProvider:
+        def answer(self, task, model=None, category="general", max_tokens_override=None):
+            seen_overrides.append(max_tokens_override)
+            return Answer(text="42", provider="fireworks", model=model or "fake", finish_reason="length")
+
+    router.remote = CappedProvider()
+    result = router.run(Task(id="test", input="What is six times seven?"))
+
+    assert result.answer.text == "42"
+    assert seen_overrides == [None]
+
+
+def test_router_applies_final_semantic_normalization():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    class RawFragmentProvider:
+        def answer(self, task, model=None, category="general", **kwargs):
+            return Answer(
+                text="useEffect(() => { fetchUser(); }, []);",
+                provider="fireworks",
+                model=model or "fake",
+            )
+
+    router.remote = RawFragmentProvider()
+    task = Task(
+        id="test",
+        input="Debug this React effect. Which exact two characters are missing from its dependency list?",
+    )
+    result = router.run(task)
+
+    assert result.answer.text == "[]"
+
+
+def test_router_solves_missing_loop_update_locally():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=False)
+    task = Task(
+        id="test",
+        input=(
+            "This JavaScript code causes the browser to freeze: "
+            "`let i = 0; while(i < 10) { console.log(i); }`. "
+            "What operation is missing inside the loop body?"
+        ),
+    )
+
+    result = router.run(task)
+
+    assert result.route == "local"
+    assert result.answer.text == "i++"
 
 
 def test_router_uses_local_model_for_gated_category():
@@ -435,11 +495,70 @@ def test_local_model_inert_without_weights_matches_baseline():
 
 def test_model_policy_uses_allowed_models_from_harness():
     config = load_config("config/models.json")
+    config["include_all_allowed_fallbacks"] = True
     config["allowed_models"] = ["accounts/fireworks/models/kimi-k2p7-code", "accounts/fireworks/models/minimax-m3"]
+    config["model_policy"]["factual"] = ["minimax-m3"]
     policy = ModelPolicy(config)
 
     assert policy.choose("code_generation") == "accounts/fireworks/models/kimi-k2p7-code"
     assert policy.choose("factual") == "accounts/fireworks/models/minimax-m3"
+
+
+def test_model_policy_uses_kimi_for_measured_logic_specialties():
+    config = load_config("config/models.json")
+    config["allowed_models"] = [
+        "accounts/fireworks/models/gemma-4-31b-it",
+        "accounts/fireworks/models/kimi-k2p7-code",
+    ]
+    policy = ModelPolicy(config)
+
+    assert policy.choose("logic", "Premise 1: All A are B. Are all A also C?").endswith("kimi-k2p7-code")
+    assert policy.choose("logic", "Every box is incorrectly labeled. Which is Apples?").endswith("kimi-k2p7-code")
+    assert policy.choose("logic", "The day before yesterday was Tuesday. What day is tomorrow?").endswith(
+        "kimi-k2p7-code"
+    )
+    assert policy.choose("logic", "Server A writes false logs on odd days.").endswith("kimi-k2p7-code")
+
+
+def test_model_policy_keeps_gemma_for_ordering_logic():
+    config = load_config("config/models.json")
+    config["allowed_models"] = [
+        "accounts/fireworks/models/gemma-4-31b-it",
+        "accounts/fireworks/models/kimi-k2p7-code",
+    ]
+    policy = ModelPolicy(config)
+
+    prompt = "A finished before B and after C. Who came second?"
+    assert policy.choose("logic", prompt).endswith("gemma-4-31b-it")
+
+
+def test_v12_policy_uses_only_the_two_measured_models():
+    config = load_config("config/models.json")
+    config["allowed_models"] = [
+        "accounts/fireworks/models/minimax-m3",
+        "accounts/fireworks/models/kimi-k2p7-code",
+        "accounts/fireworks/models/gemma-4-31b-it",
+        "accounts/fireworks/models/gemma-4-26b-a4b-it",
+        "accounts/fireworks/models/gemma-4-31b-it-nvfp4",
+    ]
+    policy = ModelPolicy(config)
+
+    assert policy.candidates("factual") == [
+        "accounts/fireworks/models/gemma-4-31b-it",
+        "accounts/fireworks/models/kimi-k2p7-code",
+    ]
+    assert policy.candidates("code_generation") == [
+        "accounts/fireworks/models/kimi-k2p7-code",
+        "accounts/fireworks/models/gemma-4-31b-it",
+    ]
+
+
+def test_v12_remote_output_caps_leave_room_for_input_tokens():
+    config = load_config("config/models.json")
+    caps = config["fireworks"]["max_tokens"]
+
+    assert max(caps.values()) <= 128
+    assert 19 * max(caps.values()) <= 2432
 
 
 def test_track1_json_io_contract(tmp_path):

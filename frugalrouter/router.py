@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import time
 
 from frugalrouter.evaluation.verifier import LocalVerifier
 from frugalrouter.model_policy import ModelPolicy
-from frugalrouter.prompting import REASONING_CATEGORIES, looks_like_reasoning_spill
+from frugalrouter.prompting import REASONING_CATEGORIES, clean_answer, looks_like_reasoning_spill
 from frugalrouter.providers.fireworks import FireworksError, FireworksProvider
 from frugalrouter.providers.local import LocalProvider
 from frugalrouter.providers.local_model import LocalModelProvider
@@ -36,6 +37,7 @@ class FrugalRouter:
         self.local_confidence_threshold = float(config.get("local_confidence_threshold", 0.92))
         self.remote_max_attempts = int(config.get("remote_max_attempts", 3))
         self.remote_backoff_seconds = float(config.get("remote_backoff_seconds", 2.0))
+        self.retry_truncated = bool(config.get("retry_truncated", True))
         self.rescue_max_tokens = int(config.get("rescue_max_tokens", 900))
         self.local = LocalProvider()
         self.local_model = LocalModelProvider(config)
@@ -92,7 +94,7 @@ class FrugalRouter:
 
         errors: list[str] = []
         remote_answer = None
-        for model in self.model_policy.candidates(category):
+        for model in self.model_policy.candidates(category, prompt=task.input):
             remote_answer, abort = self._call_with_retry(task, model, category, errors)
             if remote_answer is not None or abort:
                 break
@@ -108,6 +110,13 @@ class FrugalRouter:
                 category=category,
             )
 
+        # Keep a final normalization boundary in the router. Providers already
+        # clean responses, but this is intentionally idempotent and protects
+        # exact semantic answers when a fallback provider returns raw text.
+        remote_answer = replace(
+            remote_answer,
+            text=clean_answer(remote_answer.text, category, prompt=task.input),
+        )
         remote_verification = self.verifier.score(task, remote_answer)
         return RouteResult(
             task_id=task.id,
@@ -175,7 +184,7 @@ class FrugalRouter:
             # the real answer, leaving it empty or full of spilled reasoning;
             # a truncated submission is near-certain zero, so retry once with
             # a much larger cap.
-            if answer.finish_reason == "length" and max_tokens_override is None:
+            if self.retry_truncated and answer.finish_reason == "length" and max_tokens_override is None:
                 max_tokens_override = self._rescue_cap(category)
                 errors.append(f"{model}:truncated_at_cap_retrying_with_{max_tokens_override}")
                 continue

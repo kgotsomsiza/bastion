@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from frugalrouter.prompting import REASONING_CATEGORIES, clean_answer, user_prompt
+from frugalrouter.prompting import clean_answer, user_prompt
 from frugalrouter.types import Answer, Task
 
 
@@ -52,13 +52,11 @@ class FireworksProvider:
             "temperature": self.temperature,
             "max_tokens": max_tokens_override or self._max_tokens(category),
         }
-        # Overrides (e.g. reasoning_effort:none for Gemma) suppress thinking to
-        # save tokens on easy tasks. Reasoning categories need that thinking, so
-        # skip the overrides there.
-        if not skip_model_overrides and category not in REASONING_CATEGORIES:
-            for pattern, extra in self.model_overrides.items():
-                if pattern.lower() in selected_model.lower():
-                    payload.update(extra)
+        # V12 applies compact-reasoning controls to every category. Math and
+        # logic still receive task-specific instructions, but their hidden
+        # reasoning cannot consume the leaderboard's full token budget.
+        if not skip_model_overrides:
+            payload.update(self._request_overrides(selected_model, category))
 
         request = urllib.request.Request(
             self._chat_completions_url(),
@@ -99,6 +97,20 @@ class FireworksProvider:
         if isinstance(self.max_tokens, dict):
             return int(self.max_tokens.get(category, self.max_tokens.get("general", 220)))
         return int(self.max_tokens)
+
+    def _request_overrides(self, selected_model: str, category: str) -> dict[str, Any]:
+        resolved: dict[str, Any] = {}
+        for pattern, extra in self.model_overrides.items():
+            if pattern.lower() not in selected_model.lower():
+                continue
+            for field, value in extra.items():
+                if isinstance(value, dict):
+                    category_value = value.get(category, value.get("default"))
+                    if category_value is not None:
+                        resolved[field] = category_value
+                else:
+                    resolved[field] = value
+        return resolved
 
     def _chat_completions_url(self) -> str:
         base_url = self.base_url.rstrip("/")

@@ -16,7 +16,7 @@ CATEGORY_INSTRUCTIONS = {
     "sentiment": "Classify the sentiment toward the target being asked about, not isolated words. Handle negation and mixed phrasing carefully. Matching expectations in a factual update is neutral. Follow the requested format.",
     "summarization": "Summarize faithfully; obey the requested format and length.",
     "ner": "Extract only the requested entities. Preserve the exact source text spans; do not normalize dates, names, or values unless asked.",
-    "code_debugging": "Fix the bug. Output corrected code unless the prompt asks for explanation.",
+    "code_debugging": "Diagnose or fix exactly what is requested. If asked for a flaw, property, keyword, character, or operation, answer that directly. Output corrected code only when explicitly requested.",
     "logic": "Reason carefully. If the prompt asks for reasoning, include concise work. Put the final result on the last line as 'FINAL ANSWER:' followed by only the answer.",
     "code_generation": "Output correct runnable code only unless the prompt asks for explanation.",
     "general": "Answer exactly and concisely. Follow the requested format.",
@@ -27,9 +27,15 @@ def user_prompt(task: Task, category: str, no_reasoning: bool = False) -> str:
     format_hint = f"\nFormat: {task.expected_format}" if task.expected_format else ""
     instruction = CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
     if category in REASONING_CATEGORIES:
-        # Let the model reason freely; no terse "Answer:" cue or no-reasoning
-        # directive that would suppress the step-by-step working.
-        return f"{instruction}\n{task.input}{format_hint}"
+        if prompt_wants_explanation(task.input):
+            return (
+                "Solve accurately. Include only the essential calculation requested, then put the final result "
+                f"on the last line as 'FINAL ANSWER:' followed by the answer.\n{task.input}{format_hint}"
+            )
+        return (
+            "Solve accurately and silently. Return only the requested final value. "
+            f"No steps, derivation, or explanation.\n{task.input}{format_hint}\nAnswer:"
+        )
     directive = "\nDo not show reasoning or thoughts. Output only the final answer." if no_reasoning else ""
     return f"{instruction}\n{task.input}{format_hint}{directive}\nAnswer:"
 
@@ -76,6 +82,7 @@ def clean_answer(text: str, category: str, prompt: str | None = None) -> str:
     answer = _strip_inline_code_ticks(answer)
     answer = _strip_bare_call_when_identifier_requested(answer, prompt)
     if category == "code_debugging":
+        answer = _extract_requested_corrected_line(answer, prompt)
         answer = _extract_code_debugging_exact_fragment(answer, prompt)
     answer = _format_time_when_hhmm_requested(answer, prompt)
 
@@ -168,6 +175,13 @@ def _extract_code_debugging_exact_fragment(text: str, prompt: str | None) -> str
         inline_identifiers = re.findall(r"`([A-Za-z_]\w*)`", stripped)
         if inline_identifiers:
             return inline_identifiers[-1]
+        declaration_keyword = re.search(
+            r"(?m)^\s*(global|nonlocal|let|const|var|static|async|await|public|private|protected|final|virtual|override|mutable|volatile)\b",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        if declaration_keyword:
+            return declaration_keyword.group(1)
 
     if re.search(r"\b(?:literal|numeric literal|number)\b", prompt_text) and re.search(
         r"\b(?:exact|exactly|only|just|nothing else)\b", prompt_text
@@ -184,9 +198,38 @@ def _extract_code_debugging_exact_fragment(text: str, prompt: str | None) -> str
             if fragment in stripped:
                 return fragment
 
-    if re.search(r"\b(?:operator|operation|subtract|add|multiply|divide)\b", prompt_text) and re.search(
+    if re.search(r"\b(?:property|css property)\b", prompt_text) and re.search(r"\bignored\b", prompt_text):
+        inline_property = re.search(r"`([a-z][a-z-]*)(?:\s*:[^`]*)?`", stripped, flags=re.IGNORECASE)
+        if inline_property:
+            return inline_property.group(1)
+        declaration_ignored = re.search(
+            r"(?i)\b([a-z][a-z-]*)\s*:[^;\n]+;\s+(?:is\s+)?(?:effectively\s+)?ignored\b",
+            stripped,
+        )
+        if declaration_ignored:
+            return declaration_ignored.group(1)
+        ignored_property = re.search(
+            r"(?i)\b([a-z][a-z-]*)\b(?:\s+property)?\s+is\s+(?:effectively\s+)?ignored\b",
+            stripped,
+        )
+        if ignored_property:
+            return ignored_property.group(1)
+        css_properties = re.findall(r"(?m)^\s*([a-z-]+)\s*:", stripped, flags=re.IGNORECASE)
+        if css_properties:
+            return css_properties[-1]
+
+    if re.search(r"\b(?:operator|operation|subtract|multiply|divide)\b", prompt_text) and re.search(
         r"\b(?:exact|exactly|only|just|what|which)\b", prompt_text
     ):
+        loop_variable = re.search(r"\bwhile\s*\(\s*([A-Za-z_]\w*)\s*[<>]", prompt, flags=re.IGNORECASE)
+        if loop_variable and stripped.strip("` .").lower() in {"+", "++", "increment", "increment it"}:
+            return f"{loop_variable.group(1)}++"
+        increment_match = re.search(
+            r"\b[A-Za-z_]\w*\s*(?:\+\+|--|\+=\s*1|-=\s*1|=\s*[A-Za-z_]\w*\s*[+-]\s*1)(?=\s|[;})\]]|$)",
+            stripped,
+        )
+        if increment_match:
+            return increment_match.group(0).strip()
         operation_match = re.search(r"(?<![\w.])[-+*/]\s*\d+(?:\.\d+)?\b", stripped)
         if operation_match:
             return operation_match.group(0).strip()
@@ -195,6 +238,20 @@ def _extract_code_debugging_exact_fragment(text: str, prompt: str | None) -> str
             return operator_match.group(0)
 
     return text
+
+
+def _extract_requested_corrected_line(text: str, prompt: str | None) -> str:
+    if not prompt or not re.search(
+        r"\b(?:corrected|fixed)\s+(?:first\s+)?line\b.*\b(?:only|exactly)\b|\b(?:only|exactly)\b.*\b(?:corrected|fixed)\s+(?:first\s+)?line\b",
+        prompt,
+        flags=re.IGNORECASE,
+    ):
+        return text
+    fenced = re.search(r"```[a-zA-Z0-9_+-]*\r?\n(.*?)\r?\n?```", text, flags=re.DOTALL)
+    candidate = fenced.group(1).strip() if fenced else text.strip()
+    lines = [line.strip() for line in candidate.splitlines() if line.strip()]
+    code_lines = [line for line in lines if re.search(r"[(){}:;=]", line) and not line.lower().startswith("corrected")]
+    return code_lines[0] if code_lines else text
 
 
 def _format_time_when_hhmm_requested(text: str, prompt: str | None) -> str:

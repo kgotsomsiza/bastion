@@ -12,6 +12,7 @@ input/
 output/
 logs/
 reports/
+tmp/
 dist/
 build/
 *.egg-info/

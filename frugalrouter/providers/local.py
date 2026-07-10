@@ -133,6 +133,10 @@ class LocalProvider:
         if self._is_sentiment_prompt(lower):
             return self._sentiment(prompt)
 
+        code_debugging = self._code_debugging_shortcut(prompt)
+        if code_debugging is not None:
+            return code_debugging, 0.99, ["computed_loop_update"]
+
         factual = self._factual_shortcut(prompt)
         if factual is not None:
             return factual, 0.99, ["computed_factual_shortcut"]
@@ -206,6 +210,31 @@ class LocalProvider:
             if len(missing) == 1:
                 return missing[0].upper()
         return None
+
+    def _code_debugging_shortcut(self, prompt: str) -> str | None:
+        lower = prompt.lower()
+        if not re.search(r"\b(?:missing|omit(?:ted)?|forgot(?:ten)?)\b", lower):
+            return None
+        if not re.search(r"\b(?:operation|update|increment|decrement)\b", lower):
+            return None
+        if not re.search(r"\b(?:freeze|freezes|frozen|infinite\s+loop)\b", lower):
+            return None
+
+        loop = re.search(
+            r"\bwhile\s*\(\s*([A-Za-z_]\w*)\s*(<=?|>=?)\s*[^)]+\)\s*\{([^}]*)\}",
+            prompt,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if not loop:
+            return None
+
+        variable, comparison, body = loop.groups()
+        if re.search(
+            rf"\b{re.escape(variable)}\b\s*(?:\+\+|--|[+\-*/]?=)",
+            body,
+        ):
+            return None
+        return f"{variable}++" if comparison.startswith("<") else f"{variable}--"
 
     def _logic_shortcut(self, prompt: str) -> str | None:
         power_strip_answer = self._power_strip_empty_outlets(prompt)

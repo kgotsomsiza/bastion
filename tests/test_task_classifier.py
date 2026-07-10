@@ -33,6 +33,9 @@ def test_natural_math_prompts_are_classified():
 def test_natural_code_prompts_are_classified():
     assert classify_prompt("What specific keyword is missing in this async JavaScript function?") == "code_debugging"
     assert classify_prompt("What built-in dictionary method avoids a KeyError?") == "code_debugging"
+    assert classify_prompt(
+        "This loop freezes: while(i < 10) { console.log(i); }. What operation is missing inside the loop body?"
+    ) == "code_debugging"
     assert classify_prompt("Write a regex that matches a literal dollar sign.") == "code_generation"
     assert classify_prompt("Write a Python list comprehension for even squares.") == "code_generation"
 

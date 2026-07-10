@@ -32,13 +32,20 @@ def test_ner_prompt_preserves_exact_source_spans():
     assert "do not normalize dates" in prompt
 
 
-def test_reasoning_category_prompts_for_step_by_step():
+def test_reasoning_category_requests_only_final_answer_by_default():
     task = Task(id="t", input="A train travels 120 km in 2 hours; how long for 300 km?")
-    # math/logic ask for working + a FINAL ANSWER marker, and ignore no_reasoning.
     for cat in ("math", "logic"):
         prompt = user_prompt(task, cat, no_reasoning=True)
+        assert "Solve accurately and silently" in prompt
+        assert "Return only the requested final value" in prompt
+
+
+def test_reasoning_category_preserves_requested_explanation():
+    task = Task(id="t", input="Show your work: what is 12 * 15?")
+    for cat in ("math", "logic"):
+        prompt = user_prompt(task, cat)
         assert "FINAL ANSWER" in prompt
-        assert "Do not show reasoning" not in prompt
+        assert "Solve accurately and silently" not in prompt
 
 
 def test_reasoning_category_extracts_final_answer():
@@ -74,6 +81,12 @@ def test_extracts_keyword_from_code_debugging_exact_prompt():
     assert clean_answer(answer, "code_debugging", prompt=prompt) == "global"
 
 
+def test_extracts_keyword_from_unfenced_corrected_code():
+    prompt = "What specific keyword must be placed before count inside the function?"
+    answer = "count = 0\n\ndef increment():\n    global count\n    count += 1"
+    assert clean_answer(answer, "code_debugging", prompt=prompt) == "global"
+
+
 def test_extracts_numeric_literal_from_code_debugging_exact_prompt():
     prompt = "What numeric literal should be used? Reply with exactly the literal."
     assert clean_answer("double result = 5 / 2.0;", "code_debugging", prompt=prompt) == "2.0"
@@ -82,6 +95,42 @@ def test_extracts_numeric_literal_from_code_debugging_exact_prompt():
 def test_extracts_operation_from_code_debugging_exact_prompt():
     prompt = "What exact operation should be applied to arr.length? Reply with only the operation."
     assert clean_answer("let lastItem = arr[arr.length - 1];", "code_debugging", prompt=prompt) == "- 1"
+
+
+def test_does_not_treat_function_named_add_as_requested_operation():
+    prompt = "What is the syntax error? Output the corrected first line only: def add(a, b) return a + b"
+    answer = "def add(a, b):\n    return a + b"
+    assert clean_answer(answer, "code_debugging", prompt=prompt) == "def add(a, b):"
+
+
+def test_extracts_missing_increment_operation():
+    prompt = "What operation is missing inside the loop body?"
+    answer = "while (i < 10) { console.log(i); i++; }"
+    assert clean_answer(answer, "code_debugging", prompt=prompt) == "i++"
+
+
+def test_recovers_loop_variable_when_model_returns_only_increment_operator():
+    prompt = "The code while(i < 10) freezes. What operation is missing inside the loop body?"
+    assert clean_answer("++", "code_debugging", prompt=prompt) == "i++"
+    assert clean_answer("+", "code_debugging", prompt=prompt) == "i++"
+
+
+def test_extracts_ignored_css_property():
+    prompt = "Which CSS property is effectively ignored?"
+    answer = ".box {\n  display: flex;\n  /* float: left; is ignored */\n}"
+    assert clean_answer(answer, "code_debugging", prompt=prompt) == "float"
+
+
+def test_extracts_requested_corrected_first_line_from_explanation():
+    prompt = "What is the syntax error? Output the corrected first line only."
+    answer = "The colon is missing.\n\nCorrected first line:\n```python\ndef add(a, b):\n```"
+    assert clean_answer(answer, "code_debugging", prompt=prompt) == "def add(a, b):"
+
+
+def test_extracts_inline_ignored_property():
+    prompt = "Which property is effectively ignored?"
+    answer = "The `float` property is effectively ignored."
+    assert clean_answer(answer, "code_debugging", prompt=prompt) == "float"
 
 
 def test_extracts_two_character_fragment_from_code_debugging_exact_prompt():

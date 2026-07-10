@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -17,15 +18,23 @@ class ModelPolicy:
         self.allowed_models = config.get("allowed_models") or DEFAULT_ALLOWED_MODELS
         self.policy = config.get("model_policy", {})
         self.default_model = config.get("fireworks", {}).get("default_model")
+        self.include_all_allowed_fallbacks = bool(config.get("include_all_allowed_fallbacks", True))
+        self.logic_specialist_patterns = config.get("logic_specialist_patterns", [])
 
-    def choose(self, category: str) -> str:
-        return self.candidates(category)[0]
+    def choose(self, category: str, prompt: str | None = None) -> str:
+        return self.candidates(category, prompt=prompt)[0]
 
-    def candidates(self, category: str) -> list[str]:
-        preferences = self.policy.get(category) or self.policy.get("general") or []
+    def candidates(self, category: str, prompt: str | None = None) -> list[str]:
+        policy_key = category
+        if category == "logic" and prompt and any(
+            re.search(pattern, prompt, flags=re.IGNORECASE) for pattern in self.logic_specialist_patterns
+        ):
+            policy_key = "logic_specialist"
+        preferences = self.policy.get(policy_key) or self.policy.get(category) or self.policy.get("general") or []
         if self.default_model:
             preferences = [*preferences, self.default_model]
-        preferences = [*preferences, *DEFAULT_ALLOWED_MODELS]
+        if self.include_all_allowed_fallbacks:
+            preferences = [*preferences, *DEFAULT_ALLOWED_MODELS]
 
         candidates: list[str] = []
         for preference in preferences:
@@ -35,9 +44,12 @@ class ModelPolicy:
 
         if not self.allowed_models:
             raise RuntimeError("No allowed Fireworks models are configured.")
-        for model in self.allowed_models:
-            if model not in candidates:
-                candidates.append(model)
+        if self.include_all_allowed_fallbacks:
+            for model in self.allowed_models:
+                if model not in candidates:
+                    candidates.append(model)
+        if not candidates:
+            raise RuntimeError("None of the configured model preferences are allowed by the harness.")
         return candidates
 
     def _find_allowed(self, preference: str) -> str | None:
