@@ -37,7 +37,8 @@
     "model_label": "qwen2.5-3b-q4",
     "categories": [
       "sentiment",
-      "ner"
+      "ner",
+      "summarization"
     ],
     "max_tokens": 128,
     "n_ctx": 4096,

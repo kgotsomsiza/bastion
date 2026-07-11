@@ -14,16 +14,29 @@ LOCAL_MODEL_SYSTEM = (
     "no explanation unless asked, and no restating of the question."
 )
 
-# Constraint-explicit instructions raise the verification acceptance rate:
-# every rejected local answer still costs a remote call, so compliant output
-# is what makes this tier pay for itself.
+# Constraint-explicit instructions with compact few-shot examples. Local
+# prompt tokens are FREE (zero Fireworks tokens; only CPU seconds), so
+# examples are the cheapest way to raise verification acceptance - every
+# rejected local answer still costs a remote call.
 LOCAL_CATEGORY_INSTRUCTIONS = {
     "sentiment": (
-        "Respond with exactly one word - positive, negative, or neutral - and nothing else."
+        "Respond with exactly one word - positive, negative, or neutral - and nothing else.\n"
+        "Example: 'The checkout was smooth and support replied within minutes.' -> positive\n"
+        "Example: 'The screen cracked on day two and nobody answered my emails.' -> negative\n"
+        "Example: 'The package arrived on the scheduled date.' -> neutral"
+    ),
+    "ner": (
+        "Extract only the requested entities, comma-separated, each spelled exactly as it "
+        "appears in the text, complete spans included (e.g. 'EUR 120', not 'EUR').\n"
+        "Example: 'Extract the person names: Sara met Tomas in Cairo.' -> Sara, Tomas\n"
+        "Example: 'Extract the monetary values: it cost $30 and later EUR 55.' -> $30, EUR 55"
     ),
     "summarization": (
         "Write the summary in your own compressed words (do not copy a sentence verbatim). "
-        "Obey any stated word or sentence limit exactly. Output only the summary."
+        "Obey any stated word or sentence limit exactly. Output only the summary.\n"
+        "Example: 'Summarize in one sentence: The library will close early on Friday for "
+        "maintenance work on the heating system and reopen Saturday morning.' -> "
+        "Friday early closure for heating maintenance; reopens Saturday."
     ),
 }
 
