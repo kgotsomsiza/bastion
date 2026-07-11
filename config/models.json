@@ -34,7 +34,7 @@
   },
   "local_model": {
     "model_path": "/app/models/model.gguf",
-    "model_label": "qwen2.5-3b-q4",
+    "model_label": "bastion-v18-qwen2.5-3b-q4",
     "categories": [
       "sentiment",
       "ner"
@@ -42,7 +42,7 @@
     "max_tokens": 128,
     "n_ctx": 4096,
     "n_threads": 2,
-    "_comment": "Zero-token tier: 3B Q4, verification-gated with one corrective retry. sentiment+ner ONLY: both measured 100% on accepted answers across every round; summarization measurably leaked wrong answers through verification twice (V15 suspected, V17 retry measured 5/6) and stays remote. factual 75% raw - remote."
+    "_comment": "Zero-token tier: V18 fine-tuned 3B Q4, sentiment+ner only, no corrective retry. Held-out safety gate accepted 27/40 with 27/27 correct; structured NER completeness checks reject partial lists. Summarization and factual stay remote."
   },
   "model_policy": {
     "code_debugging": [

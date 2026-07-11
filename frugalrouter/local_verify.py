@@ -7,6 +7,7 @@ a rejected one only costs the tokens we would have spent anyway.
 """
 from __future__ import annotations
 
+import json
 import re
 
 SENTIMENT_LABELS = {"positive", "negative", "neutral"}
@@ -60,6 +61,105 @@ def _verify_sentiment(prompt: str, lowered_answer: str) -> bool:
 
 
 def _verify_ner(prompt: str, answer: str) -> bool:
+    if re.search(r"\b(?:none|no [a-z]+ (?:found|present)|n/a)\b", answer, flags=re.IGNORECASE):
+        return False
+    items = _parse_ner_items(prompt, answer)
+    if not items:
+        return False
+
+    source_text = _ner_source_text(prompt)
+    source = source_text.lower()
+    for item in items:
+        pattern = re.escape(item.lower())
+        if not re.search(rf"(?<![\w$€£#.]){pattern}(?![\w%])", source):
+            return False
+
+    required = _required_ner_items(prompt, source_text)
+    if required:
+        normalized_items = {_normalize_ner_item(item) for item in items}
+        normalized_required = {_normalize_ner_item(item) for item in required}
+        if normalized_items != normalized_required:
+            return False
+    return True
+
+
+def _parse_ner_items(prompt: str, answer: str) -> list[str]:
+    stripped = answer.strip()
+    if stripped.startswith("["):
+        try:
+            payload = json.loads(stripped)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(payload, list) or not payload or not all(isinstance(item, str) for item in payload):
+            return []
+        return [item.strip() for item in payload if item.strip()]
+
+    if "|" in stripped and re.search(r"\bpipe(?:-separated| character)?\b", prompt, flags=re.IGNORECASE):
+        return [item.strip() for item in stripped.split("|") if item.strip()]
+
+    if re.search(r"\bemail addresses?\b", prompt, flags=re.IGNORECASE):
+        emails = re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", stripped)
+        if emails:
+            return emails
+
+    items: list[str] = []
+    for line in stripped.splitlines():
+        line = re.sub(r"^[\s*•-]*(?:[A-Za-z ]{2,20}:)?", "", line).strip()
+        if not line:
+            continue
+        items.extend(part.strip(" .;") for part in re.split(r"[,;]| and ", line) if part.strip(" .;"))
+    return items
+
+
+def _ner_source_text(prompt: str) -> str:
+    marked = re.search(
+        r":\s*'(.*?)'\s*(?=(?:List|Return|Output|Format)\b|$)",
+        prompt,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if marked:
+        return marked.group(1)
+    quoted = re.findall(r"'([^'\n]{10,})'", prompt)
+    return max(quoted, key=len) if quoted else prompt
+
+
+def _required_ner_items(prompt: str, source: str) -> list[str]:
+    lowered = prompt.lower()
+    if "acronym" in lowered or "abbreviation" in lowered:
+        return re.findall(r"\b[A-Z][A-Z0-9]{1,}\b", source)
+    if "email address" in lowered:
+        return re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", source)
+    if "monetary value" in lowered:
+        return re.findall(
+            r"(?:[$€£]\s?\d+(?:,\d{3})*(?:\.\d+)?|"
+            r"\b(?:USD|EUR|GBP|ZAR|R)\s?\d+(?:,\d{3})*(?:\.\d+)?|"
+            r"\b\d+(?:,\d{3})*(?:\.\d+)?\s?(?:USD|EUR|GBP|ZAR))\b",
+            source,
+        )
+    if re.search(r"\b(?:all|exact)\s+date", lowered):
+        months = (
+            r"January|February|March|April|May|June|July|August|September|October|November|December"
+        )
+        ordinals = (
+            r"first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|"
+            r"thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|"
+            r"twentieth|twenty-first|twenty-second|twenty-third|twenty-fourth|twenty-fifth|"
+            r"twenty-sixth|twenty-seventh|twenty-eighth|twenty-ninth|thirtieth|thirty-first"
+        )
+        return re.findall(
+            rf"\b(?:\d{{4}}-\d{{2}}-\d{{2}}|(?:{months})\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,\s*\d{{4}})?|"
+            rf"(?:{ordinals})\s+of\s+(?:{months})(?:,\s*\d{{4}})?)\b",
+            source,
+            flags=re.IGNORECASE,
+        )
+    return []
+
+
+def _normalize_ner_item(item: str) -> str:
+    return re.sub(r"\s+", " ", item.strip()).lower()
+
+
+def _verify_ner_legacy(prompt: str, answer: str) -> bool:
     # Every extracted span must literally exist in the source text; a small
     # model inventing or normalizing entities is the failure mode we block.
     # "No entities" claims are unverifiable, so they also go remote.
