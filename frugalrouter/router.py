@@ -67,7 +67,14 @@ class FrugalRouter:
         # task falls through to remote: a rejected local answer costs only
         # the tokens we would have spent anyway, a wrong one risks the gate.
         if self.local_model.available_for(category):
-            lm_answer = self._local_model_answer_with_retry(task, category)
+            # Single pass, no corrective retry: retries measurably coerced the
+            # model into terse-but-wrong answers that slipped past verification
+            # (truncated NER spans, thin summaries). First-pass answers are the
+            # trustworthy ones; anything rejected goes remote.
+            try:
+                lm_answer = self.local_model.answer(task, category=category)
+            except Exception:  # noqa: BLE001 - never let a local-model bug kill the task
+                lm_answer = None
             if (
                 lm_answer is not None
                 and lm_answer.text.strip()
@@ -132,36 +139,6 @@ class FrugalRouter:
             fallback_reason=fallback_reason,
             category=category,
         )
-
-    def _local_model_answer_with_retry(self, task: Task, category: str):
-        """Local answer with one corrective retry on verification failure.
-
-        Most verification rejections are format failures ("The sentiment is
-        positive" instead of "positive"), not judgment failures. One local
-        retry with an explicit compliance hint costs zero Fireworks tokens and
-        the retried answer still has to pass the same verification, so this
-        raises the zero-token acceptance rate without weakening the gate.
-        """
-        try:
-            lm_answer = self.local_model.answer(task, category=category)
-        except Exception:  # noqa: BLE001 - never let a local-model bug kill the task
-            return None
-        if lm_answer is not None and lm_answer.text.strip() and verify_local_answer(
-            task.input, category, lm_answer.text
-        ):
-            return lm_answer
-        try:
-            return self.local_model.answer(
-                task,
-                category=category,
-                corrective_hint=(
-                    "IMPORTANT: obey every stated format constraint exactly (word counts, "
-                    "single word, one sentence). Output only the answer itself - no labels, "
-                    "no preamble, no explanation."
-                ),
-            )
-        except Exception:  # noqa: BLE001
-            return None
 
     def _call_with_retry(self, task: Task, model: str, category: str, errors: list[str]):
         """Call one model, trying both name forms on 404.
