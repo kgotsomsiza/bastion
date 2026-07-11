@@ -150,12 +150,13 @@ def gen_summarization(n: int) -> None:
 
 if __name__ == "__main__":
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 400
+    # Train sentiment + NER only. Summarization is excluded on purpose: clean
+    # non-verbatim training summaries are hard to generate (it kept leaking
+    # wrong answers at runtime too), so it stays on the remote Gemma path.
     gen_ner(n)
     print(f"ner done: {len(rows)}", flush=True)
     gen_sentiment(n)
     print(f"+sentiment done: {len(rows)}", flush=True)
-    gen_summarization(n // 2)
-    print(f"+summarization done: {len(rows)}", flush=True)
     random.shuffle(rows)
     os.makedirs("data/finetune", exist_ok=True)
     with open("data/finetune/train.jsonl", "w", encoding="utf-8") as f:
