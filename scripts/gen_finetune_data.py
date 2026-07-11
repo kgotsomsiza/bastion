@@ -126,11 +126,16 @@ def gen_sentiment(n: int) -> None:
 # ---------- Summarization: distilled, constraint-verified ----------
 def gen_summarization(n: int) -> None:
     got = 0
-    while got < n:
+    attempts = 0
+    while got < n and attempts < n * 4:
+        attempts += 1
+        if attempts % 25 == 0:
+            print(f"  summ progress: {got}/{n} accepted after {attempts} attempts", flush=True)
         out = call("Write a 60-90 word workplace or news-style paragraph about a specific concrete "
                    "situation (a schedule change, an outage, a decision, a local event). "
-                   "Then on a new line write 'SUMMARY:' followed by a one-sentence summary in "
-                   "your own words (do not reuse 6+ consecutive words from the paragraph).", 320)
+                   "Then on a new line write 'SUMMARY:' followed by a one-sentence summary that "
+                   "REPHRASES the content in different words - never reuse more than 4 consecutive "
+                   "words from the paragraph.", 320)
         if "SUMMARY:" not in out:
             continue
         passage, summary = out.split("SUMMARY:", 1)
@@ -141,6 +146,7 @@ def gen_summarization(n: int) -> None:
         if verify_local_answer(task, "summarization", summary):
             rows.append(chat_row("summarization", task, summary))
             got += 1
+    print(f"  summ final: {got}/{n} accepted after {attempts} attempts", flush=True)
 
 if __name__ == "__main__":
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 400
