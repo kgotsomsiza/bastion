@@ -11,18 +11,18 @@ from frugalrouter.types import Task
 REASONING_CATEGORIES = {"math", "logic"}
 
 CATEGORY_INSTRUCTIONS = {
-    # Diet: factual/general/codegen carry minimal instructions (the LLM judge
-    # is intent-lenient); sentiment/ner/debug keep theirs - they encode fixes
-    # for measured hidden-set failures.
-    "factual": "Answer concisely.",
+    # V17: exact V15 instruction set restored. The V16 "diet" (dropping the
+    # format-compliance clauses) coincided with a 16/19 -> 14/19 hidden drop;
+    # these strings are measured-good and stay verbatim.
+    "factual": "Answer concisely; follow the requested format.",
     "math": "Solve carefully. If the prompt asks for reasoning, include concise work. Put the final result on the last line as 'FINAL ANSWER:' followed by only the answer.",
     "sentiment": "Classify sentiment of the asked-about target; mind negation and mixed phrasing. Plain factual updates are neutral. Follow the requested format.",
     "summarization": "Summarize faithfully; obey the requested format and length.",
     "ner": "Extract only the requested entities; keep exact source spans, do not normalize.",
     "code_debugging": "Answer exactly what is asked (flaw, keyword, character, operation); corrected code only if requested.",
     "logic": "Reason carefully. If the prompt asks for reasoning, include concise work. Put the final result on the last line as 'FINAL ANSWER:' followed by only the answer.",
-    "code_generation": "Output only runnable code unless asked to explain.",
-    "general": "Answer exactly and concisely.",
+    "code_generation": "Output correct runnable code only unless the prompt asks for explanation.",
+    "general": "Answer exactly and concisely. Follow the requested format.",
 }
 
 
