@@ -25,28 +25,65 @@
     }
   },
   "model_overrides": {
-    "gemma": { "reasoning_effort": "none" },
-    "kimi": { "reasoning_effort": "none" }
+    "gemma": {
+      "reasoning_effort": "none"
+    },
+    "kimi": {
+      "reasoning_effort": "none"
+    }
   },
   "local_model": {
     "model_path": "/app/models/model.gguf",
     "model_label": "qwen2.5-3b-q4",
-    "categories": ["sentiment", "summarization", "ner"],
+    "categories": [
+      "sentiment",
+      "ner"
+    ],
     "max_tokens": 128,
     "n_ctx": 4096,
     "n_threads": 2,
-    "_comment": "Zero-token tier: 3B Q4. Judge-box-twin droplet (2 shared vCPU, 4GB) measured load 5.3s, worst task 15.4s - the earlier 5min/task laptop number was a dev-machine artifact. Verified accuracy there: sentiment 9/9, ner 14/14. Only verification-passing answers ship; everything else stays remote. factual/math/logic/code remote."
+    "_comment": "Zero-token tier: 3B Q4, verification-gated. sentiment (nuance-gated) and ner (boundary-checked) measured 100% on accepted answers; summarization dropped after V15 lost a task (semantically unverifiable, weakest evidence base). factual measured 75% raw - stays remote."
   },
   "model_policy": {
-    "code_debugging": ["kimi-k2p7-code", "gemma-4-31b-it"],
-    "code_generation": ["kimi-k2p7-code", "gemma-4-31b-it"],
-    "math": ["gemma-4-31b-it", "kimi-k2p7-code"],
-    "logic": ["gemma-4-31b-it", "kimi-k2p7-code"],
-    "logic_specialist": ["kimi-k2p7-code", "gemma-4-31b-it"],
-    "sentiment": ["gemma-4-31b-it", "kimi-k2p7-code"],
-    "summarization": ["gemma-4-31b-it", "kimi-k2p7-code"],
-    "ner": ["gemma-4-31b-it", "kimi-k2p7-code"],
-    "factual": ["gemma-4-31b-it", "kimi-k2p7-code"],
-    "general": ["gemma-4-31b-it", "kimi-k2p7-code"]
+    "code_debugging": [
+      "kimi-k2p7-code",
+      "gemma-4-31b-it"
+    ],
+    "code_generation": [
+      "kimi-k2p7-code",
+      "gemma-4-31b-it"
+    ],
+    "math": [
+      "gemma-4-31b-it",
+      "kimi-k2p7-code"
+    ],
+    "logic": [
+      "gemma-4-31b-it",
+      "kimi-k2p7-code"
+    ],
+    "logic_specialist": [
+      "kimi-k2p7-code",
+      "gemma-4-31b-it"
+    ],
+    "sentiment": [
+      "gemma-4-31b-it",
+      "kimi-k2p7-code"
+    ],
+    "summarization": [
+      "gemma-4-31b-it",
+      "kimi-k2p7-code"
+    ],
+    "ner": [
+      "gemma-4-31b-it",
+      "kimi-k2p7-code"
+    ],
+    "factual": [
+      "gemma-4-31b-it",
+      "kimi-k2p7-code"
+    ],
+    "general": [
+      "gemma-4-31b-it",
+      "kimi-k2p7-code"
+    ]
   }
 }

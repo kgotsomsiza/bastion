@@ -153,6 +153,10 @@ class LocalProvider:
         if time_answer is not None:
             return time_answer, 0.98, ["computed_time_word_problem"]
 
+        together = self._together_cost_algebra(prompt)
+        if together is not None:
+            return together, 0.98, ["computed_together_cost_algebra"]
+
         sequence = self._number_sequence(prompt)
         if sequence is not None:
             return sequence, 0.98, ["computed_number_sequence"]
@@ -167,6 +171,49 @@ class LocalProvider:
             return text, 0.97, [reason]
 
         return "", 0.0, ["no_local_shortcut"]
+
+    def _together_cost_algebra(self, prompt: str) -> str | None:
+        """Classic 'together cost A; one costs B more than the other' algebra.
+
+        cheap = (A - B) / 2, expensive = cheap + B. Fires only when both a
+        combined amount and a more-than difference parse cleanly and the
+        question names which item is asked; anything murkier goes remote.
+        """
+        together = re.search(
+            r"together\s+(?:cost|costs|is|are|total)\s*\$?\s*(\d+(?:\.\d+)?)|"
+            r"(?:cost|costs|total)\s*\$?\s*(\d+(?:\.\d+)?)\s+(?:together|in total|combined)",
+            prompt,
+            flags=re.IGNORECASE,
+        )
+        difference = re.search(
+            r"(?:the\s+)?([\w-]+)\s+costs?\s*\$?\s*(\d+(?:\.\d+)?)\s+more\s+than\s+(?:the\s+)?([\w-]+)",
+            prompt,
+            flags=re.IGNORECASE,
+        )
+        if not together or not difference:
+            return None
+        total = float(together.group(1) or together.group(2))
+        expensive_word = difference.group(1).lower()
+        diff = float(difference.group(2))
+        cheap_word = difference.group(3).lower()
+        if total <= diff:
+            return None
+        cheap = (total - diff) / 2
+        asks_cents = re.search(r"\bin\s+cents\b", prompt, flags=re.IGNORECASE)
+        asked = re.search(r"how much (?:does|do|is|are)\s+(?:the\s+)?([\w-]+)", prompt, flags=re.IGNORECASE)
+        if not asked:
+            return None
+        asked_word = asked.group(1).lower()
+        # Only answer when the asked item is unambiguously one of the two.
+        if asked_word == cheap_word:
+            value = cheap
+        elif asked_word == expensive_word:
+            value = cheap + diff
+        else:
+            return None
+        if asks_cents:
+            return str(int(round(value * 100)))
+        return str(int(value)) if float(value).is_integer() else f"{value:.2f}"
 
     def _number_sequence(self, prompt: str) -> str | None:
         """Next number in a sequence, only for exactly-recognized patterns.
