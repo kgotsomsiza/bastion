@@ -37,12 +37,13 @@
     "model_label": "qwen2.5-3b-q4",
     "categories": [
       "sentiment",
-      "ner"
+      "ner",
+      "summarization"
     ],
     "max_tokens": 128,
     "n_ctx": 4096,
     "n_threads": 2,
-    "_comment": "Zero-token tier: 3B Q4, verification-gated. sentiment (nuance-gated) and ner (boundary-checked) measured 100% on accepted answers; summarization dropped after V15 lost a task (semantically unverifiable, weakest evidence base). factual measured 75% raw - stays remote."
+    "_comment": "Zero-token tier: 3B Q4, verification-gated (V15-proven set: sentiment nuance-gated, ner boundary-checked, summarization verbatim-rejected+grounded), with one corrective local retry on verification failure. factual measured 75% raw - stays remote."
   },
   "model_policy": {
     "code_debugging": [

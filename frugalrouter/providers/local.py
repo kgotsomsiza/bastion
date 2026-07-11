@@ -153,9 +153,10 @@ class LocalProvider:
         if time_answer is not None:
             return time_answer, 0.98, ["computed_time_word_problem"]
 
-        # NOTE: _together_cost_algebra exists but is intentionally NOT wired
-        # in: it shipped in V16 alongside the instruction diet and V16 dropped
-        # 16/19 -> 14/19 hidden. Reintroduce only as a single-variable change.
+        together = self._together_cost_algebra(prompt)
+        if together is not None:
+            return together, 0.98, ["computed_together_cost_algebra"]
+
         sequence = self._number_sequence(prompt)
         if sequence is not None:
             return sequence, 0.98, ["computed_number_sequence"]

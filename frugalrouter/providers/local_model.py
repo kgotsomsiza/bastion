@@ -86,11 +86,13 @@ class LocalModelProvider:
                 self._load_failed = True
                 return False
 
-    def answer(self, task: Task, category: str = "general") -> Answer:
+    def answer(self, task: Task, category: str = "general", corrective_hint: str | None = None) -> Answer:
         started = time.perf_counter()
         instruction = LOCAL_CATEGORY_INSTRUCTIONS.get(
             category, CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
         )
+        if corrective_hint:
+            instruction = f"{instruction}\n{corrective_hint}"
         with self._lock:
             completion = self._llm.create_chat_completion(
                 messages=[
