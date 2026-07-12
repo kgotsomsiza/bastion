@@ -10,8 +10,12 @@ import argparse
 import hashlib
 import json
 import random
+import sys
 from collections import defaultdict
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from frugalrouter.local_verify import verify_local_answer
 from frugalrouter.providers.local_model import LOCAL_CATEGORY_INSTRUCTIONS, LOCAL_MODEL_SYSTEM
