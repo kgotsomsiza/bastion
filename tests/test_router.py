@@ -4,8 +4,28 @@ from frugalrouter.config import load_config
 from frugalrouter.io import read_tasks, write_results
 from frugalrouter.model_policy import ModelPolicy
 from frugalrouter.providers.fireworks import FireworksError
+from frugalrouter.providers.local_model import LocalModelResult
 from frugalrouter.router import FrugalRouter
 from frugalrouter.types import Answer, Task
+
+
+def _local_model_result(
+    text: str,
+    probability: float = 0.95,
+    finish_reason: str | None = "stop",
+) -> LocalModelResult:
+    return LocalModelResult(
+        answer=Answer(
+            text=text,
+            provider="local_model",
+            model="fake-qwen",
+            finish_reason=finish_reason,
+        ),
+        first_probability=probability,
+        min_probability=probability,
+        geometric_mean_probability=probability,
+        mean_margin=1.0,
+    )
 
 
 def test_router_uses_local_for_direct_arithmetic():
@@ -435,9 +455,7 @@ def test_router_solves_missing_loop_update_locally():
 
 
 def test_router_uses_local_model_for_verified_answer():
-    # V14: local-model answers ship only when verify_local_answer accepts them
-    # (sentiment/ner/summarization with checkable output); factual and other
-    # unverifiable categories always fall through to remote.
+    # Confidence does not replace the stricter sentiment verifier.
     config = load_config("config/models.json")
     router = FrugalRouter(config=config, allow_remote=True)
 
@@ -445,8 +463,11 @@ def test_router_uses_local_model_for_verified_answer():
         def available_for(self, category):
             return category == "sentiment"
 
+        def confidence_threshold_for(self, category):
+            return 0.80
+
         def answer(self, task, category="general"):
-            return Answer(text="negative", provider="local_model", model="fake-0.5b")
+            return _local_model_result("negative")
 
     class ExplodingRemote:
         def answer(self, *a, **k):
@@ -472,9 +493,12 @@ def test_router_rejects_unverified_local_model_answer():
         def available_for(self, category):
             return category == "ner"
 
+        def confidence_threshold_for(self, category):
+            return 0.75
+
         def answer(self, task, category="general"):
             # Invented span not present in the source: verification must block it.
-            return Answer(text="Robert", provider="local_model", model="fake-0.5b")
+            return _local_model_result("Robert")
 
     class OkRemote:
         def answer(self, task, model=None, category="general", **kwargs):
@@ -497,8 +521,11 @@ def test_router_falls_back_to_remote_when_local_model_empty():
         def available_for(self, category):
             return True
 
+        def confidence_threshold_for(self, category):
+            return 0.80
+
         def answer(self, task, category="general"):
-            return Answer(text="", provider="local_model", model="fake-2b")
+            return _local_model_result("")
 
     class FakeRemote:
         def answer(self, task, model=None, category="general", **kwargs):
@@ -512,6 +539,113 @@ def test_router_falls_back_to_remote_when_local_model_empty():
     assert result.route == "remote"
     assert result.used_remote is True
     assert result.answer.text == "remote-answer"
+
+
+def test_router_uses_confident_factual_local_model_answer():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    class FakeLocalModel:
+        def available_for(self, category):
+            return category == "factual"
+
+        def confidence_threshold_for(self, category):
+            return 0.80
+
+        def answer(self, task, category="general"):
+            return _local_model_result("Ottawa", probability=0.91)
+
+    class ExplodingRemote:
+        def answer(self, *args, **kwargs):
+            raise AssertionError("remote should not be called")
+
+    router.local_model = FakeLocalModel()
+    router.remote = ExplodingRemote()
+
+    result = router.run(Task(id="t", input="What is Canada's capital city? Output only the city."))
+
+    assert result.route == "local_model"
+    assert result.answer.text == "Ottawa"
+    assert result.verification.confidence == 0.91
+
+
+def test_router_rejects_low_confidence_local_model_answer():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    class FakeLocalModel:
+        def available_for(self, category):
+            return category == "factual"
+
+        def confidence_threshold_for(self, category):
+            return 0.80
+
+        def answer(self, task, category="general"):
+            return _local_model_result("Toronto", probability=0.79)
+
+    class OkRemote:
+        def answer(self, task, model=None, category="general", **kwargs):
+            return Answer(text="Ottawa", provider="fireworks", model=model or "remote")
+
+    router.local_model = FakeLocalModel()
+    router.remote = OkRemote()
+
+    result = router.run(Task(id="t", input="What is Canada's capital city? Output only the city."))
+
+    assert result.route == "remote"
+    assert result.answer.text == "Ottawa"
+
+
+def test_router_rejects_truncated_local_model_answer():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    class FakeLocalModel:
+        def available_for(self, category):
+            return category == "factual"
+
+        def confidence_threshold_for(self, category):
+            return 0.80
+
+        def answer(self, task, category="general"):
+            return _local_model_result("Ottawa", probability=0.99, finish_reason="length")
+
+    class OkRemote:
+        def answer(self, task, model=None, category="general", **kwargs):
+            return Answer(text="Ottawa", provider="fireworks", model=model or "remote")
+
+    router.local_model = FakeLocalModel()
+    router.remote = OkRemote()
+
+    result = router.run(Task(id="t", input="What is Canada's capital city? Output only the city."))
+
+    assert result.route == "remote"
+
+
+def test_router_rejects_local_model_when_explanation_is_requested():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=True)
+
+    class FakeLocalModel:
+        def available_for(self, category):
+            return category == "factual"
+
+        def confidence_threshold_for(self, category):
+            return 0.80
+
+        def answer(self, task, category="general"):
+            return _local_model_result("Ottawa", probability=0.99)
+
+    class OkRemote:
+        def answer(self, task, model=None, category="general", **kwargs):
+            return Answer(text="Ottawa is Canada's capital.", provider="fireworks", model=model or "remote")
+
+    router.local_model = FakeLocalModel()
+    router.remote = OkRemote()
+
+    result = router.run(Task(id="t", input="Explain briefly why Ottawa is Canada's capital city."))
+
+    assert result.route == "remote"
 
 
 def test_local_model_inert_without_weights_matches_baseline():

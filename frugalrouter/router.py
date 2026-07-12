@@ -4,9 +4,14 @@ from dataclasses import replace
 import time
 
 from frugalrouter.evaluation.verifier import LocalVerifier
-from frugalrouter.local_verify import verify_local_answer
+from frugalrouter.local_verify import verify_confident_local_answer
 from frugalrouter.model_policy import ModelPolicy
-from frugalrouter.prompting import REASONING_CATEGORIES, clean_answer, looks_like_reasoning_spill
+from frugalrouter.prompting import (
+    REASONING_CATEGORIES,
+    clean_answer,
+    looks_like_reasoning_spill,
+    prompt_wants_explanation,
+)
 from frugalrouter.providers.fireworks import FireworksError, FireworksProvider
 from frugalrouter.providers.local import LocalProvider
 from frugalrouter.providers.local_model import LocalModelProvider
@@ -60,27 +65,33 @@ class FrugalRouter:
                 category=category,
             )
 
-        # Zero-token tier 2: a bundled small model answers gated easy
-        # categories for free. Skipped entirely (no-op) when no model is
-        # present, so the Fireworks-only baseline is unchanged. Every answer
-        # must pass deterministic verification (verify_local_answer) or the
-        # task falls through to remote: a rejected local answer costs only
-        # the tokens we would have spent anyway, a wrong one risks the gate.
-        if self.local_model.available_for(category):
+        # Zero-token tier 2: a bundled model answers only calibrated categories.
+        # It is a no-op when weights are absent. Confidence, output constraints,
+        # and category verifiers must all pass or the task falls through.
+        if not prompt_wants_explanation(task.input) and self.local_model.available_for(category):
             # Single pass, no corrective retry: retries measurably coerced the
             # model into terse-but-wrong answers that slipped past verification
             # (truncated NER spans, thin summaries). First-pass answers are the
             # trustworthy ones; anything rejected goes remote.
             try:
-                lm_answer = self.local_model.answer(task, category=category)
+                lm_result = self.local_model.answer(task, category=category)
             except Exception:  # noqa: BLE001 - never let a local-model bug kill the task
-                lm_answer = None
+                lm_result = None
             if (
-                lm_answer is not None
-                and lm_answer.text.strip()
-                and verify_local_answer(task.input, category, lm_answer.text)
+                lm_result is not None
+                and lm_result.answer.finish_reason != "length"
+                and lm_result.min_probability >= self.local_model.confidence_threshold_for(category)
+                and lm_result.answer.text.strip()
+                and verify_confident_local_answer(task.input, category, lm_result.answer.text)
             ):
-                lm_verification = self.verifier.score(task, lm_answer)
+                lm_answer = lm_result.answer
+                lm_verification = Verification(
+                    confidence=lm_result.min_probability,
+                    reasons=[
+                        f"model_min_probability_{lm_result.min_probability:.3f}",
+                        "local_constraints_passed",
+                    ],
+                )
                 return RouteResult(
                     task_id=task.id,
                     answer=lm_answer,

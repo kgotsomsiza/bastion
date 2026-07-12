@@ -10,21 +10,17 @@ import sys
 import time
 from typing import Any
 
-import numpy as np
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from frugalrouter.eval_runner import grade_answer  # noqa: E402
 from frugalrouter.local_verify import verify_local_answer  # noqa: E402
-from frugalrouter.prompting import (  # noqa: E402
-    CATEGORY_INSTRUCTIONS,
-    clean_answer,
-    prompt_wants_explanation,
-)
+from frugalrouter.prompting import clean_answer, prompt_wants_explanation  # noqa: E402
 from frugalrouter.providers.local_model import (  # noqa: E402
-    LOCAL_CATEGORY_INSTRUCTIONS,
     LOCAL_MODEL_SYSTEM,
+    confidence_from_logits,
+    configure_non_thinking_chat,
+    instruction_for_local_task,
 )
 
 
@@ -33,51 +29,6 @@ def env_flag(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def non_thinking_template(template: str) -> str:
-    return "{%- set enable_thinking = false -%}\n" + template
-
-
-def configure_non_thinking_chat(model: Any) -> bool:
-    template = model.metadata.get("tokenizer.chat_template")
-    if not template:
-        return False
-
-    from llama_cpp.llama_chat_format import Jinja2ChatFormatter
-
-    eos_token_id = model.token_eos()
-    bos_token_id = model.token_bos()
-    eos_token = model._model.token_get_text(eos_token_id) if eos_token_id != -1 else ""
-    bos_token = model._model.token_get_text(bos_token_id) if bos_token_id != -1 else ""
-    model.chat_handler = Jinja2ChatFormatter(
-        template=non_thinking_template(template),
-        eos_token=eos_token,
-        bos_token=bos_token,
-        stop_token_ids=[eos_token_id] if eos_token_id != -1 else None,
-    ).to_chat_handler()
-    model.chat_format = None
-    return True
-
-
-def instruction_for_task(category: str, prompt: str) -> str:
-    if category in {"math", "logic"} and not prompt_wants_explanation(prompt):
-        return (
-            "Solve internally. Output only the requested final answer, with no reasoning, "
-            "work, preamble, or FINAL ANSWER label."
-        )
-    return LOCAL_CATEGORY_INSTRUCTIONS.get(
-        category, CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
-    )
-
-
-def confidence_from_logits(scores: np.ndarray) -> tuple[float, float]:
-    values = np.asarray(scores, dtype=np.float64)
-    top_two = np.partition(values, -2)[-2:]
-    maximum = float(top_two.max())
-    second = float(top_two.min())
-    log_probability = maximum - (maximum + math.log(float(np.exp(values - maximum).sum())))
-    return math.exp(log_probability), maximum - second
 
 
 def summarize_confidence(probabilities: list[float], margins: list[float]) -> dict[str, float]:
@@ -134,7 +85,7 @@ def run(model_path: Path, tasks_path: Path, output_path: Path) -> int:
     for index, spec in enumerate(tasks, 1):
         category = str(spec.get("category") or "general")
         explanation_requested = prompt_wants_explanation(spec["prompt"])
-        instruction = instruction_for_task(category, spec["prompt"])
+        instruction = instruction_for_local_task(category, spec["prompt"])
         probabilities: list[float] = []
         margins: list[float] = []
 
