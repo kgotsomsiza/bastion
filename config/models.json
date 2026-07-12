@@ -34,12 +34,27 @@
   },
   "local_model": {
     "model_path": "/app/models/model.gguf",
-    "model_label": "qwen2.5-3b-q4",
-    "categories": [],
+    "model_label": "qwen3.5-4b-q4-k-m",
+    "categories": [
+      "factual",
+      "sentiment",
+      "ner",
+      "code_debugging",
+      "code_generation"
+    ],
     "max_tokens": 128,
-    "n_ctx": 4096,
+    "n_ctx": 2048,
     "n_threads": 2,
-    "_comment": "V20: local-model tier DISABLED. Measured across 5 hidden runs: no-tier configs scored 17/19 twice (V13,V14); tier configs (stock V15/V17, fine-tuned V19) scored 16/19 three times with small-to-negative token savings. Verification checks format, never judgment; the tier costs ~1 hidden task. Deterministic solvers and remote path unchanged."
+    "n_batch": 256,
+    "disable_thinking": true,
+    "confidence_thresholds": {
+      "factual": 0.8,
+      "sentiment": 0.8,
+      "ner": 0.75,
+      "code_debugging": 0.7,
+      "code_generation": 0.7
+    },
+    "_comment": "V23 Qwen3.5 confidence tier. Frozen thresholds accepted 22/22 on Blind 1, 25/25 on disjoint Blind 2, and 5/5 on replica19 after deterministic preemption plus runtime verification. Math and logic are disabled after confident errors; summarization is disabled for latency. Missing weights still fall through to the proven V20 Fireworks path."
   },
   "model_policy": {
     "code_debugging": [

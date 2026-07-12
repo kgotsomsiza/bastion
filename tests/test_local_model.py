@@ -3,6 +3,7 @@ import math
 import numpy as np
 import pytest
 
+from frugalrouter.config import load_config
 from frugalrouter.providers.local_model import (
     LocalModelProvider,
     _non_thinking_template,
@@ -45,3 +46,19 @@ def test_unconfigured_category_has_impossible_confidence_threshold():
 
     assert provider.confidence_threshold_for("factual") == 0.8
     assert provider.confidence_threshold_for("logic") > 1.0
+
+
+def test_v23_config_enables_only_validated_categories():
+    config = load_config("config/models.json")
+    local = config["local_model"]
+
+    assert set(local["categories"]) == {
+        "factual",
+        "sentiment",
+        "ner",
+        "code_debugging",
+        "code_generation",
+    }
+    assert set(local["confidence_thresholds"]) == set(local["categories"])
+    assert {"math", "logic", "summarization"}.isdisjoint(local["categories"])
+    assert local["disable_thinking"] is True
