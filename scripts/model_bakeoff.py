@@ -60,8 +60,10 @@ def grade(task: dict, answer: str) -> bool:
 def run(model_path: str, label: str, files: list[str]) -> None:
     from llama_cpp import Llama
 
+    n_ctx = int(os.getenv("BAKEOFF_N_CTX", "4096"))
+    max_tokens = int(os.getenv("BAKEOFF_MAX_TOKENS", "128"))
     t0 = time.time()
-    llm = Llama(model_path=model_path, n_ctx=4096, n_threads=2, n_gpu_layers=0, verbose=False)
+    llm = Llama(model_path=model_path, n_ctx=n_ctx, n_threads=2, n_gpu_layers=0, verbose=False)
     print(f"[{label}] load {time.time()-t0:.1f}s", flush=True)
     for path in files:
         cat = path.split("/")[-1].split(".")[0].replace("blind2", "").strip("_") or "mixed"
@@ -76,7 +78,7 @@ def run(model_path: str, label: str, files: list[str]) -> None:
             out = llm.create_chat_completion(
                 messages=[{"role": "system", "content": LOCAL_MODEL_SYSTEM},
                           {"role": "user", "content": f"{instr}\n{t['prompt']}"}],
-                temperature=0.0, max_tokens=128)
+                temperature=0.0, max_tokens=max_tokens)
             lat.append(time.time() - s)
             ans = clean_answer((out["choices"][0]["message"].get("content") or ""), category, prompt=t["prompt"])
             correct = grade(t, ans)
@@ -90,6 +92,8 @@ def run(model_path: str, label: str, files: list[str]) -> None:
             rows.append({
                 "task_id": t.get("task_id") or t.get("id"),
                 "category": category,
+                "prompt": t["prompt"],
+                "task_spec": t,
                 "answer": ans,
                 "correct": correct,
                 "accepted": accepted,
@@ -105,6 +109,8 @@ def run(model_path: str, label: str, files: list[str]) -> None:
             "accepted": acc,
             "accepted_correct": acc_ok,
             "dangerous_wrong_accepts": acc - acc_ok,
+            "n_ctx": n_ctx,
+            "max_tokens": max_tokens,
             "latency_average_seconds": round(sum(lat) / len(lat), 4),
             "latency_max_seconds": round(max(lat), 4),
         }

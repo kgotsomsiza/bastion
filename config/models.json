@@ -38,8 +38,8 @@
     "categories": [
       "ner"
     ],
-    "max_tokens": 128,
-    "n_ctx": 4096,
+    "max_tokens": 64,
+    "n_ctx": 2048,
     "n_threads": 2,
     "_comment": "V21: Qwen3-4B-Instruct-2507 Q4_K_M is enabled for NER only. Sentiment and factual were unsafe on both measured 4B candidates; summarization had too little accepted yield and near-timeout latency. NER must pass the strict exact-entity-set holdout gate before this image ships."
   },
