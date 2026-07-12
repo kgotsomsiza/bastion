@@ -130,6 +130,10 @@ class LocalProvider:
         if exact is not None:
             return exact, 0.99, ["exact_response_instruction"]
 
+        structured_ner = self._structured_ner(prompt)
+        if structured_ner is not None:
+            return structured_ner, 0.99, ["computed_structured_ner"]
+
         if self._is_sentiment_prompt(lower):
             return self._sentiment(prompt)
 
@@ -171,6 +175,73 @@ class LocalProvider:
             return text, 0.97, [reason]
 
         return "", 0.0, ["no_local_shortcut"]
+
+    def _structured_ner(self, prompt: str) -> str | None:
+        """Extract only mechanically complete, explicitly requested spans.
+
+        This shortcut deliberately supports two closed-form entity types. It
+        requires a colon-delimited source passage and refuses mixed entity
+        requests, so a partial extraction cannot masquerade as a full answer.
+        Every returned value is an exact source span.
+        """
+        if ":" not in prompt:
+            return None
+        instruction, source = (part.strip() for part in prompt.split(":", 1))
+        if not instruction or not source:
+            return None
+
+        intent = instruction.lower()
+        if re.search(r"\b(?:write|create|build|generate)\b.*\b(?:code|function|program|script|regex|regexp)\b", intent):
+            return None
+        if not re.search(r"\b(?:extract|identify|list|find|pull|return|contain)\w*\b", intent):
+            return None
+
+        email_requested = bool(re.search(r"\b(?:e-?mail)(?:\s+addresses?)?\b", intent))
+        money_requested = bool(
+            re.search(
+                r"\b(?:monetary|money|currency|currencies|financial)\s+(?:values?|amounts?)\b"
+                r"|\b(?:prices?|currency amounts?)\b",
+                intent,
+            )
+        )
+        if email_requested == money_requested:
+            return None
+
+        other_entity_kinds = (
+            r"\b(?:people|persons?|names?|organizations?|organisations?|companies|locations?|"
+            r"cities|countries|dates?|times?|phones?|telephone|regulations?|acronyms?|"
+            r"formulas?|compounds?|products?)\b"
+        )
+        intent_without_target = re.sub(
+            r"\b(?:e-?mail)(?:\s+addresses?)?\b"
+            r"|\b(?:monetary|money|currency|currencies|financial)\s+(?:values?|amounts?)\b"
+            r"|\b(?:prices?|currency amounts?)\b",
+            "",
+            intent,
+        )
+        if re.search(other_entity_kinds, intent_without_target):
+            return None
+
+        if email_requested:
+            matches = re.findall(
+                r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b(?![\w-])",
+                source,
+                flags=re.IGNORECASE,
+            )
+        else:
+            number = r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+            currency = re.compile(
+                rf"(?<!\w)(?:(?:US\$|C\$|A\$|[$€£])\s*{number}|"
+                rf"(?:USD|EUR|GBP|CHF|ZAR|R)\s*{number}|"
+                rf"{number}\s*(?:US\s+dollars?|dollars?|euros?|pounds?|rand|francs?|"
+                rf"USD|EUR|GBP|CHF|ZAR))(?!\w)",
+                flags=re.IGNORECASE,
+            )
+            matches = [match.group(0) for match in currency.finditer(source)]
+
+        if not matches:
+            return None
+        return "\n".join(matches)
 
     def _together_cost_algebra(self, prompt: str) -> str | None:
         """Classic 'together cost A; one costs B more than the other' algebra.

@@ -33,6 +33,75 @@ def test_router_uses_local_for_direct_percentage():
     assert result.route == "local"
 
 
+def test_router_extracts_email_spans_locally():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=False)
+    task = Task(
+        id="test",
+        input=(
+            "Pull out all email addresses from this chunk of text: "
+            "Contact priya@example.com or ops-team@amd.test before Friday."
+        ),
+    )
+
+    result = router.run(task)
+
+    assert result.answer.text == "priya@example.com\nops-team@amd.test"
+    assert result.route == "local"
+    assert result.category == "ner"
+    assert result.verification.reasons == ["computed_structured_ner"]
+
+
+def test_router_extracts_money_spans_locally_in_source_order():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=False)
+    task = Task(
+        id="test",
+        input=(
+            "Find and return the monetary values in the following: "
+            "The trial is $7, renewal is EUR 120, and support costs 35 rand."
+        ),
+    )
+
+    result = router.run(task)
+
+    assert result.answer.text == "$7\nEUR 120\n35 rand"
+    assert result.route == "local"
+    assert result.category == "ner"
+
+
+def test_router_refuses_partial_mixed_entity_extraction():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=False)
+    task = Task(
+        id="test",
+        input=(
+            "Extract the monetary amounts and dates from: "
+            "The invoice dated 2025-03-14 lists 1,250 dollars due by April 1."
+        ),
+    )
+
+    result = router.run(task)
+
+    assert result.answer.text == ""
+    assert result.route == "local_remote_disabled"
+
+
+def test_router_refuses_email_regex_generation_prompt():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=False)
+    task = Task(
+        id="test",
+        input="Write a regex that extracts email addresses: use user@example.com as a sample.",
+    )
+
+    result = router.run(task)
+
+    assert result.answer.text == ""
+    assert result.route == "local_remote_disabled"
+    assert result.category == "code_generation"
+
+
 def test_router_computes_us_state_missing_letter_fact():
     config = load_config("config/models.json")
     router = FrugalRouter(config=config, allow_remote=False)
