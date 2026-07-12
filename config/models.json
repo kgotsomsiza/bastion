@@ -34,12 +34,14 @@
   },
   "local_model": {
     "model_path": "/app/models/model.gguf",
-    "model_label": "qwen2.5-3b-q4",
-    "categories": [],
+    "model_label": "qwen3-4b-instruct-2507-q4km",
+    "categories": [
+      "ner"
+    ],
     "max_tokens": 128,
     "n_ctx": 4096,
     "n_threads": 2,
-    "_comment": "V20: local-model tier DISABLED. Measured across 5 hidden runs: no-tier configs scored 17/19 twice (V13,V14); tier configs (stock V15/V17, fine-tuned V19) scored 16/19 three times with small-to-negative token savings. Verification checks format, never judgment; the tier costs ~1 hidden task. Deterministic solvers and remote path unchanged."
+    "_comment": "V21: Qwen3-4B-Instruct-2507 Q4_K_M is enabled for NER only. Sentiment and factual were unsafe on both measured 4B candidates; summarization had too little accepted yield and near-timeout latency. NER must pass the strict exact-entity-set holdout gate before this image ships."
   },
   "model_policy": {
     "code_debugging": [
