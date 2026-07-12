@@ -17,11 +17,58 @@ sys.path.insert(0, str(ROOT))
 
 from frugalrouter.eval_runner import grade_answer  # noqa: E402
 from frugalrouter.local_verify import verify_local_answer  # noqa: E402
-from frugalrouter.prompting import CATEGORY_INSTRUCTIONS, clean_answer  # noqa: E402
+from frugalrouter.prompting import (  # noqa: E402
+    CATEGORY_INSTRUCTIONS,
+    clean_answer,
+    prompt_wants_explanation,
+)
 from frugalrouter.providers.local_model import (  # noqa: E402
     LOCAL_CATEGORY_INSTRUCTIONS,
     LOCAL_MODEL_SYSTEM,
 )
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def non_thinking_template(template: str) -> str:
+    return "{%- set enable_thinking = false -%}\n" + template
+
+
+def configure_non_thinking_chat(model: Any) -> bool:
+    template = model.metadata.get("tokenizer.chat_template")
+    if not template:
+        return False
+
+    from llama_cpp.llama_chat_format import Jinja2ChatFormatter
+
+    eos_token_id = model.token_eos()
+    bos_token_id = model.token_bos()
+    eos_token = model._model.token_get_text(eos_token_id) if eos_token_id != -1 else ""
+    bos_token = model._model.token_get_text(bos_token_id) if bos_token_id != -1 else ""
+    model.chat_handler = Jinja2ChatFormatter(
+        template=non_thinking_template(template),
+        eos_token=eos_token,
+        bos_token=bos_token,
+        stop_token_ids=[eos_token_id] if eos_token_id != -1 else None,
+    ).to_chat_handler()
+    model.chat_format = None
+    return True
+
+
+def instruction_for_task(category: str, prompt: str) -> str:
+    if category in {"math", "logic"} and not prompt_wants_explanation(prompt):
+        return (
+            "Solve internally. Output only the requested final answer, with no reasoning, "
+            "work, preamble, or FINAL ANSWER label."
+        )
+    return LOCAL_CATEGORY_INSTRUCTIONS.get(
+        category, CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
+    )
 
 
 def confidence_from_logits(scores: np.ndarray) -> tuple[float, float]:
@@ -75,14 +122,19 @@ def run(model_path: Path, tasks_path: Path, output_path: Path) -> int:
         n_threads=int(os.getenv("BAKEOFF_N_THREADS", "2")),
         verbose=False,
     )
+    disable_thinking_requested = env_flag("BAKEOFF_DISABLE_THINKING")
+    non_thinking_configured = (
+        configure_non_thinking_chat(model) if disable_thinking_requested else False
+    )
+    if disable_thinking_requested and not non_thinking_configured:
+        raise RuntimeError("BAKEOFF_DISABLE_THINKING was requested but no GGUF chat template exists")
     load_seconds = time.perf_counter() - started
     rows: list[dict[str, Any]] = []
 
     for index, spec in enumerate(tasks, 1):
         category = str(spec.get("category") or "general")
-        instruction = LOCAL_CATEGORY_INSTRUCTIONS.get(
-            category, CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
-        )
+        explanation_requested = prompt_wants_explanation(spec["prompt"])
+        instruction = instruction_for_task(category, spec["prompt"])
         probabilities: list[float] = []
         margins: list[float] = []
 
@@ -116,6 +168,7 @@ def run(model_path: Path, tasks_path: Path, output_path: Path) -> int:
             "answer": answer,
             "correct": bool(grade["passed"]),
             "grade_reason": grade["reason"],
+            "explanation_requested": explanation_requested,
             "verified": verify_local_answer(spec["prompt"], category, answer),
             "latency_seconds": round(latency, 3),
             "completion_tokens": completion_tokens,
@@ -143,6 +196,8 @@ def run(model_path: Path, tasks_path: Path, output_path: Path) -> int:
     report = {
         "model": str(model_path),
         "tasks_file": str(tasks_path),
+        "disable_thinking_requested": disable_thinking_requested,
+        "non_thinking_configured": non_thinking_configured,
         "load_seconds": round(load_seconds, 3),
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "summary": {
