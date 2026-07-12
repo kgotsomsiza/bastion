@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import math
 import os
 from pathlib import Path
+import re
 import sys
 import time
 from typing import Any
@@ -76,6 +78,56 @@ def load_checkpoint_rows(path: Path) -> list[dict[str, Any]]:
     ]
 
 
+def parse_ner_items(answer: str) -> list[str]:
+    text = (answer or "").strip()
+    if text.startswith(("[", "{")):
+        try:
+            structured = json.loads(text)
+        except json.JSONDecodeError:
+            structured = None
+        if isinstance(structured, list) and all(isinstance(item, str) for item in structured):
+            return [item.strip() for item in structured if item.strip()]
+        if isinstance(structured, dict):
+            values: list[str] = []
+            for value in structured.values():
+                if isinstance(value, str) and value.strip():
+                    values.append(value.strip())
+                elif isinstance(value, list):
+                    values.extend(str(item).strip() for item in value if str(item).strip())
+            if values:
+                return values
+
+    items: list[str] = []
+    for line in text.splitlines():
+        line = re.sub(r"^[\s*\u2022-]*(?:[A-Za-z ]{2,20}:)?", "", line).strip()
+        if line:
+            items.extend(
+                part.strip(" .;\"'")
+                for part in re.split(r"[,;|]|\s+and\s+", line)
+                if part.strip(" .;\"'")
+            )
+    return items
+
+
+def _normalized_counter(items: list[Any]) -> Counter[str]:
+    return Counter(" ".join(str(item).lower().split()) for item in items)
+
+
+def grade_task(answer: str, spec: dict[str, Any]) -> dict[str, Any]:
+    if spec.get("category") == "ner":
+        expected = spec.get("expected_entity_set")
+        if expected is None:
+            expected = spec.get("expected_contains_all")
+        if expected is not None:
+            actual_counter = _normalized_counter(parse_ner_items(answer))
+            expected_counter = _normalized_counter(list(expected))
+            return {
+                "passed": actual_counter == expected_counter,
+                "reason": f"exact_entity_multiset:{dict(expected_counter)}",
+            }
+    return grade_answer(answer, spec)
+
+
 def run(model_path: Path, tasks_path: Path, output_path: Path) -> int:
     from llama_cpp import Llama, LogitsProcessorList
 
@@ -137,7 +189,7 @@ def run(model_path: Path, tasks_path: Path, output_path: Path) -> int:
         completion_tokens = int((response.get("usage") or {}).get("completion_tokens", len(probabilities)))
         probabilities = probabilities[:completion_tokens]
         margins = margins[:completion_tokens]
-        grade = grade_answer(answer, spec)
+        grade = grade_task(answer, spec)
         row = {
             "task_id": task_id,
             "category": category,
