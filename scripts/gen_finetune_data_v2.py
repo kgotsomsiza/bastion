@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 import sys
 import urllib.request
 
@@ -26,8 +27,8 @@ from frugalrouter.prompting import CATEGORY_INSTRUCTIONS  # noqa: E402
 from frugalrouter.local_verify import verify_local_answer  # noqa: E402
 
 API = "https://api.fireworks.ai/inference/v1/chat/completions"
-KEY = os.environ["FIREWORKS_API_KEY"]
 GEN_MODEL = "accounts/fireworks/models/kimi-k2p7-code"
+VALIDATION_MODEL = "accounts/fireworks/models/minimax-m3"
 
 random.seed(20260712)
 
@@ -61,18 +62,74 @@ SENT_STYLES = ["plain", "casual with a typo or two", "formal", "very short (unde
                "slightly verbose", "with an emoji"]
 
 
-def call(prompt: str, max_tokens: int = 400, temperature: float = 1.0) -> str:
+def call(
+    prompt: str,
+    *,
+    model: str = GEN_MODEL,
+    max_tokens: int = 400,
+    temperature: float = 1.0,
+) -> str:
+    key = os.getenv("FIREWORKS_API_KEY")
+    if not key:
+        raise RuntimeError("FIREWORKS_API_KEY is required for data generation")
     body = json.dumps({
-        "model": GEN_MODEL,
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": temperature,
         "max_tokens": max_tokens,
+        "reasoning_effort": "none",
     }).encode()
     req = urllib.request.Request(API, data=body, headers={
-        "Authorization": f"Bearer {KEY}", "Content-Type": "application/json",
+        "Authorization": f"Bearer {key}", "Content-Type": "application/json",
         "User-Agent": "bastion-datagen/2.0"}, method="POST")
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.load(r)["choices"][0]["message"]["content"] or ""
+
+
+def parse_string_array(raw: str) -> list[str]:
+    """Parse a model-produced JSON string array, tolerating fenced output."""
+    candidates = [raw.strip()]
+    match = re.search(r"\[[\s\S]*\]", raw)
+    if match:
+        candidates.append(match.group(0))
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            return value
+    return []
+
+
+META_TEXT = re.compile(
+    r"\b(?:one per line|no numbering|no quotes|each must be|here (?:are|is)|"
+    r"let(?:'s| us) draft|clearly (?:satisfied|dissatisfied)|plain factual statement)\b",
+    re.IGNORECASE,
+)
+
+
+def clean_sentiment_candidate(raw: str) -> str | None:
+    line = re.sub(r"^\s*(?:[-*\u2022]+|\d+[.)])\s*", "", raw).strip().strip('"')
+    if not 12 <= len(line) <= 220 or META_TEXT.search(line):
+        return None
+    if len(re.findall(r"[A-Za-z]+", line)) < 3:
+        return None
+    return line
+
+
+def validate_sentiments(lines: list[str], model: str) -> list[str]:
+    """Independently classify a batch; invalid output rejects the whole batch."""
+    prompt = (
+        "Classify each text as positive, negative, or neutral. Return ONLY a JSON array "
+        "of lowercase labels in the same order, with exactly one label per input.\nInputs:\n"
+        + json.dumps(lines, ensure_ascii=False)
+    )
+    raw = call(prompt, model=model, max_tokens=max(64, len(lines) * 8), temperature=0.0)
+    labels = [label.strip().lower() for label in parse_string_array(raw)]
+    if len(labels) != len(lines) or any(label not in {"positive", "negative", "neutral"} for label in labels):
+        return []
+    return labels
 
 
 def chat_row(category: str, task_text: str, gold: str, family: str) -> dict:
@@ -124,6 +181,8 @@ def make_ner_text() -> tuple[str, str, list[str]]:
 
 rows_train: list[dict] = []
 rows_holdout: list[dict] = []
+seen_task_prompts: set[str] = set()
+seen_sentiment_texts: set[str] = set()
 
 
 def gen_ner(n_train: int, n_holdout: int) -> None:
@@ -134,9 +193,12 @@ def gen_ner(n_train: int, n_holdout: int) -> None:
         kind, text, ents = make_ner_text()
         ask = random.choice(asks).format(kind=kind)
         task = f"{ask}: {text}"
+        if task in seen_task_prompts:
+            continue
         gold = ", ".join(ents)
         if not verify_local_answer(task, "ner", gold):
             continue
+        seen_task_prompts.add(task)
         row = chat_row("ner", task, gold, "ner_B_holdout" if to_holdout else "ner_A_train")
         if to_holdout:
             rows_holdout.append(row); made_h += 1
@@ -154,18 +216,33 @@ def gen_sentiment(n_train: int, n_holdout: int) -> None:
         ):
             got = 0
             attempts = 0
-            while got < per and attempts < per:
+            is_holdout = pool is rows_holdout
+            generator_model = VALIDATION_MODEL if is_holdout else GEN_MODEL
+            validator_model = GEN_MODEL if is_holdout else VALIDATION_MODEL
+            while got < per and attempts < per * 2:
                 attempts += 1
                 domain = random.choice(domains)
                 style = random.choice(SENT_STYLES)
                 hint = {"positive": "clearly satisfied, no complaints, no negation words",
                         "negative": "clearly dissatisfied, no praise, no negation words like 'not'",
                         "neutral": "a plain factual statement with no opinion and no negation words"}[label]
-                out = call(f"Write 10 one-sentence {domain} texts, style: {style}. Each must be {hint}. "
-                           f"One per line, no numbering, no quotes.")
-                for line in out.splitlines():
-                    line = line.strip().strip("-• ").strip()
-                    if len(line) < 12 or len(line) > 220 or got >= per:
+                out = call(
+                    f"Write exactly 10 distinct one-sentence {domain} texts, style: {style}. "
+                    f"Each must be {hint}. Return ONLY a valid JSON array of 10 strings.",
+                    model=generator_model,
+                )
+                candidates = []
+                for raw_line in parse_string_array(out):
+                    line = clean_sentiment_candidate(raw_line)
+                    if not line:
+                        continue
+                    normalized = " ".join(line.lower().split())
+                    if normalized in seen_sentiment_texts:
+                        continue
+                    candidates.append(line)
+                labels = validate_sentiments(candidates, validator_model) if candidates else []
+                for line, predicted in zip(candidates, labels):
+                    if got >= per or predicted != label:
                         continue
                     ask = random.choice([
                         "Classify the sentiment as positive, negative, or neutral",
@@ -173,11 +250,17 @@ def gen_sentiment(n_train: int, n_holdout: int) -> None:
                         "Is the sentiment positive, negative, or neutral?",
                         "Sentiment classification, one word (positive, negative, neutral)"])
                     task = f"{ask}: {line}"
+                    if task in seen_task_prompts:
+                        continue
                     # Runtime gate parity: skip anything the nuance gate would reject.
                     if not verify_local_answer(task, "sentiment", label):
                         continue
+                    seen_task_prompts.add(task)
+                    seen_sentiment_texts.add(" ".join(line.lower().split()))
                     pool.append(chat_row("sentiment", task, label, family))
                     got += 1
+            if got != per:
+                raise RuntimeError(f"Only generated {got}/{per} accepted {family}/{label} rows")
 
 
 if __name__ == "__main__":
@@ -189,6 +272,11 @@ if __name__ == "__main__":
     print(f"sentiment done: train={sum(1 for r in rows_train if r['category']=='sentiment')} "
           f"holdout={sum(1 for r in rows_holdout if r['category']=='sentiment')}", flush=True)
     random.shuffle(rows_train)
+    train_prompts = {row["messages"][1]["content"] for row in rows_train}
+    holdout_prompts = {row["messages"][1]["content"] for row in rows_holdout}
+    assert not train_prompts & holdout_prompts, "train/holdout prompt leakage"
+    assert len(train_prompts) == len(rows_train), "duplicate training prompts"
+    assert len(holdout_prompts) == len(rows_holdout), "duplicate holdout prompts"
     os.makedirs("data/finetune", exist_ok=True)
     with open("data/finetune/train_v2.jsonl", "w", encoding="utf-8") as f:
         for r in rows_train:

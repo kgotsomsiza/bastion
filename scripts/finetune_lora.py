@@ -1,16 +1,19 @@
-"""LoRA fine-tune of Qwen2.5-3B-Instruct for Bastion's local tier (V18).
+"""Conservative LoRA fine-tune of Qwen2.5-3B-Instruct for Bastion V19.
 
 Runs on the hackathon AMD box (ROCm). Network there is whitelisted:
 the base model comes via hf-mirror.com (HF_ENDPOINT), packages via PyPI.
-Training data (train.jsonl, chat format) is uploaded via the Jupyter UI.
+Training and source-family holdout data are uploaded to ``/workspace``.
 
 Pipeline: load -> LoRA SFT with assistant-only loss -> merge -> GGUF f16 ->
-quantize Q4_K_M -> /workspace/bastion-v18-q4km.gguf (download via Jupyter).
+quantize Q4_K_M. The holdout is evaluated before and after training but is
+never passed to ``Trainer.train``.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -19,9 +22,15 @@ os.environ.setdefault("HF_HOME", "/workspace/hf-cache")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 BASE = "Qwen/Qwen2.5-3B-Instruct"
-DATA = "/workspace/train.jsonl"
-OUT = "/workspace/ft"
-MERGED = "/workspace/merged"
+DATA = os.getenv("BASTION_TRAIN_DATA", "/workspace/train_v2.jsonl")
+HOLDOUT = os.getenv("BASTION_HOLDOUT_DATA", "/workspace/holdout_v2.jsonl")
+VARIANT = os.getenv("BASTION_FT_VARIANT", "v19-conservative")
+assert re.fullmatch(r"[a-zA-Z0-9._-]+", VARIANT), "unsafe BASTION_FT_VARIANT"
+OUT = f"/workspace/{VARIANT}-lora"
+MERGED = f"/workspace/{VARIANT}-merged"
+F16 = f"/workspace/{VARIANT}-f16.gguf"
+GGUF = f"/workspace/bastion-{VARIANT}-q4km.gguf"
+METRICS = f"/workspace/{VARIANT}-training-metrics.json"
 LLAMA = "/opt/llama.cpp"
 
 import torch  # noqa: E402
@@ -57,44 +66,16 @@ def encode(example):
     return {"input_ids": full_ids, "attention_mask": [1] * len(full_ids), "labels": labels}
 
 
-rows = [json.loads(l) for l in open(DATA, encoding="utf-8")]
-
-
-def augment_ner_formats(source_rows):
-    augmented = list(source_rows)
-    ner_index = 0
-    sentiment_labels = {"positive", "negative", "neutral"}
-    for row in source_rows:
-        gold = row["messages"][2]["content"].strip()
-        if gold in sentiment_labels:
-            continue
-        items = [item.strip() for item in gold.split(",") if item.strip()]
-        if not items:
-            continue
-        variant = ner_index % 3
-        ner_index += 1
-        if variant == 0:
-            suffix = "Return the result as a JSON array of strings."
-            answer = json.dumps(items, ensure_ascii=False)
-        elif variant == 1:
-            suffix = "Return a pipe-separated list with no spaces around the | characters."
-            answer = "|".join(items)
-        else:
-            suffix = "Return one extracted item per line."
-            answer = "\n".join(items)
-        messages = [dict(message) for message in row["messages"]]
-        messages[1]["content"] = f"{messages[1]['content']}\n{suffix}"
-        messages[2]["content"] = answer
-        augmented.append({"messages": messages})
-    return augmented
-
-
-rows = augment_ner_formats(rows)
-print("training rows after NER format augmentation:", len(rows), flush=True)
+rows = [json.loads(line) for line in open(DATA, encoding="utf-8") if line.strip()]
+holdout_rows = [json.loads(line) for line in open(HOLDOUT, encoding="utf-8") if line.strip()]
+holdout_messages = [{"messages": row["messages"]} for row in holdout_rows]
+print("training rows:", len(rows), "holdout rows:", len(holdout_messages), flush=True)
 ds = Dataset.from_list(rows).map(encode, remove_columns=["messages"])
+holdout_ds = Dataset.from_list(holdout_messages).map(encode, remove_columns=["messages"])
 lengths = [len(row["input_ids"]) for row in ds]
 print("token lengths:", min(lengths), "to", max(lengths), flush=True)
 assert all(any(label != -100 for label in row["labels"]) for row in ds)
+assert all(any(label != -100 for label in row["labels"]) for row in holdout_ds)
 
 collator = DataCollatorForSeq2Seq(
     tokenizer=tokenizer,
@@ -107,22 +88,30 @@ collator = DataCollatorForSeq2Seq(
 model = AutoModelForCausalLM.from_pretrained(BASE, torch_dtype=torch.bfloat16, device_map="cuda")
 model.config.use_cache = False
 model = get_peft_model(model, LoraConfig(
-    r=16, lora_alpha=32, lora_dropout=0.05, bias="none", task_type="CAUSAL_LM",
+    r=8, lora_alpha=16, lora_dropout=0.10, bias="none", task_type="CAUSAL_LM",
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
 ))
 model.print_trainable_parameters()
 
-Trainer(
+trainer = Trainer(
     model=model,
     args=TrainingArguments(
-        output_dir=OUT, num_train_epochs=2, per_device_train_batch_size=16,
-        learning_rate=1e-4, lr_scheduler_type="cosine", warmup_ratio=0.03,
+        output_dir=OUT, num_train_epochs=1, per_device_train_batch_size=16,
+        learning_rate=5e-5, lr_scheduler_type="cosine", warmup_ratio=0.05,
+        weight_decay=0.01, max_grad_norm=1.0,
         logging_steps=10, save_strategy="no", bf16=True, report_to=[],
         dataloader_num_workers=2, remove_unused_columns=False,
+        seed=20260712, data_seed=20260712,
     ),
     train_dataset=ds,
+    eval_dataset=holdout_ds,
     data_collator=collator,
-).train()
+)
+base_metrics = trainer.evaluate(metric_key_prefix="base_holdout")
+train_metrics = trainer.train().metrics
+tuned_metrics = trainer.evaluate(metric_key_prefix="tuned_holdout")
+print("base holdout:", base_metrics, flush=True)
+print("tuned holdout:", tuned_metrics, flush=True)
 
 print("merging...", flush=True)
 model.config.use_cache = True
@@ -132,8 +121,23 @@ tokenizer.save_pretrained(MERGED)
 
 print("converting to GGUF f16...", flush=True)
 subprocess.run([sys.executable, f"{LLAMA}/convert_hf_to_gguf.py", MERGED,
-                "--outfile", "/workspace/ft-f16.gguf", "--outtype", "f16"], check=True)
+                "--outfile", F16, "--outtype", "f16"], check=True)
 print("quantizing Q4_K_M...", flush=True)
-subprocess.run([f"{LLAMA}/build/bin/llama-quantize", "/workspace/ft-f16.gguf",
-                "/workspace/bastion-v18-q4km.gguf", "Q4_K_M"], check=True)
-print("DONE -> /workspace/bastion-v18-q4km.gguf", flush=True)
+subprocess.run([f"{LLAMA}/build/bin/llama-quantize", F16, GGUF, "Q4_K_M"], check=True)
+metadata = {
+    "variant": VARIANT,
+    "base_model": BASE,
+    "train_rows": len(rows),
+    "holdout_rows": len(holdout_messages),
+    "train_sha256": hashlib.sha256(open(DATA, "rb").read()).hexdigest(),
+    "holdout_sha256": hashlib.sha256(open(HOLDOUT, "rb").read()).hexdigest(),
+    "gguf_sha256": hashlib.sha256(open(GGUF, "rb").read()).hexdigest(),
+    "training": {"epochs": 1, "learning_rate": 5e-5, "lora_rank": 8, "lora_alpha": 16},
+    "base_holdout": base_metrics,
+    "train_metrics": train_metrics,
+    "tuned_holdout": tuned_metrics,
+}
+with open(METRICS, "w", encoding="utf-8") as handle:
+    json.dump(metadata, handle, indent=2, sort_keys=True)
+print(f"DONE -> {GGUF}", flush=True)
+print(f"metrics -> {METRICS}", flush=True)
