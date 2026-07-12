@@ -32,6 +32,10 @@ F16 = f"/workspace/{VARIANT}-f16.gguf"
 GGUF = f"/workspace/bastion-{VARIANT}-q4km.gguf"
 METRICS = f"/workspace/{VARIANT}-training-metrics.json"
 LLAMA = "/opt/llama.cpp"
+EPOCHS = float(os.getenv("BASTION_FT_EPOCHS", "1"))
+LEARNING_RATE = float(os.getenv("BASTION_FT_LEARNING_RATE", "5e-5"))
+LORA_RANK = int(os.getenv("BASTION_FT_LORA_RANK", "8"))
+LORA_ALPHA = int(os.getenv("BASTION_FT_LORA_ALPHA", str(LORA_RANK * 2)))
 
 import torch  # noqa: E402
 from datasets import Dataset  # noqa: E402
@@ -88,7 +92,7 @@ collator = DataCollatorForSeq2Seq(
 model = AutoModelForCausalLM.from_pretrained(BASE, torch_dtype=torch.bfloat16, device_map="cuda")
 model.config.use_cache = False
 model = get_peft_model(model, LoraConfig(
-    r=8, lora_alpha=16, lora_dropout=0.10, bias="none", task_type="CAUSAL_LM",
+    r=LORA_RANK, lora_alpha=LORA_ALPHA, lora_dropout=0.10, bias="none", task_type="CAUSAL_LM",
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
 ))
 model.print_trainable_parameters()
@@ -96,8 +100,8 @@ model.print_trainable_parameters()
 trainer = Trainer(
     model=model,
     args=TrainingArguments(
-        output_dir=OUT, num_train_epochs=1, per_device_train_batch_size=16,
-        learning_rate=5e-5, lr_scheduler_type="cosine", warmup_ratio=0.05,
+        output_dir=OUT, num_train_epochs=EPOCHS, per_device_train_batch_size=16,
+        learning_rate=LEARNING_RATE, lr_scheduler_type="cosine", warmup_ratio=0.05,
         weight_decay=0.01, max_grad_norm=1.0,
         logging_steps=10, save_strategy="no", bf16=True, report_to=[],
         dataloader_num_workers=2, remove_unused_columns=False,
@@ -132,7 +136,12 @@ metadata = {
     "train_sha256": hashlib.sha256(open(DATA, "rb").read()).hexdigest(),
     "holdout_sha256": hashlib.sha256(open(HOLDOUT, "rb").read()).hexdigest(),
     "gguf_sha256": hashlib.sha256(open(GGUF, "rb").read()).hexdigest(),
-    "training": {"epochs": 1, "learning_rate": 5e-5, "lora_rank": 8, "lora_alpha": 16},
+    "training": {
+        "epochs": EPOCHS,
+        "learning_rate": LEARNING_RATE,
+        "lora_rank": LORA_RANK,
+        "lora_alpha": LORA_ALPHA,
+    },
     "base_holdout": base_metrics,
     "train_metrics": train_metrics,
     "tuned_holdout": tuned_metrics,
