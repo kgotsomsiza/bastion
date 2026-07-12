@@ -26,9 +26,11 @@ CATEGORY_INSTRUCTIONS = {
 }
 
 
-def user_prompt(task: Task, category: str, no_reasoning: bool = False) -> str:
+def user_prompt(task: Task, category: str, no_reasoning: bool = False, extra_instruction: str = "") -> str:
     format_hint = f"\nFormat: {task.expected_format}" if task.expected_format else ""
     instruction = CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
+    if extra_instruction:
+        instruction = f"{instruction} {extra_instruction}"
     if category in REASONING_CATEGORIES:
         if prompt_wants_explanation(task.input):
             return (

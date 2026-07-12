@@ -194,3 +194,15 @@ def test_reasoning_is_preserved_when_work_is_requested():
     prompt = "Show your work: A car travels 120 km in 2 hours. What is its speed?"
     answer = "120 / 2 = 60.\nFINAL ANSWER: 60 km/h"
     assert clean_answer(answer, "math", prompt=prompt) == answer
+
+
+def test_extra_instruction_appended_for_non_reasoning():
+    task = Task(id="t", input="Summarize this in one sentence: The cat sat.")
+    prompt = user_prompt(task, "summarization", extra_instruction="Prefer standard phrasing.")
+    assert "Prefer standard phrasing." in prompt
+
+
+def test_extra_instruction_ignored_for_reasoning_categories():
+    task = Task(id="t", input="What is 2+2?")
+    prompt = user_prompt(task, "math", extra_instruction="SHOULD NOT APPEAR")
+    assert "SHOULD NOT APPEAR" not in prompt

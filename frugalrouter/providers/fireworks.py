@@ -29,6 +29,10 @@ class FireworksProvider:
         # Extra request fields keyed by model-name substring, e.g. turning
         # off Gemma's thinking mode with {"reasoning_effort": "none"}.
         self.model_overrides = config.get("model_overrides", {})
+        # Model-conditional instruction additions keyed by model-name substring
+        # then category. Lets us harden a category on the FALLBACK model only,
+        # leaving the primary model's prompts byte-identical to scored versions.
+        self.model_category_instructions = config.get("model_category_instructions", {})
         self.api_key = os.getenv("FIREWORKS_API_KEY")
 
     def answer(
@@ -44,10 +48,24 @@ class FireworksProvider:
             raise RuntimeError("FIREWORKS_API_KEY is not set.")
 
         selected_model = model or self.default_model
+        extra_instruction = ""
+        for pattern, categories in self.model_category_instructions.items():
+            if pattern.lower() in selected_model.lower():
+                extra_instruction = categories.get(category, "")
+                if extra_instruction:
+                    break
         payload = {
             "model": selected_model,
             "messages": [
-                {"role": "user", "content": user_prompt(task, category, no_reasoning=no_reasoning_directive)},
+                {
+                    "role": "user",
+                    "content": user_prompt(
+                        task,
+                        category,
+                        no_reasoning=no_reasoning_directive,
+                        extra_instruction=extra_instruction,
+                    ),
+                },
             ],
             "temperature": self.temperature,
             "max_tokens": max_tokens_override or self._max_tokens(category),
