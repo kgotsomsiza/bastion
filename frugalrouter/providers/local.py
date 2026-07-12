@@ -153,6 +153,22 @@ class LocalProvider:
         if time_answer is not None:
             return time_answer, 0.98, ["computed_time_word_problem"]
 
+        work_rate = self._work_rate(prompt)
+        if work_rate is not None:
+            return work_rate, 0.98, ["computed_work_rate"]
+
+        distance = self._distance_speed_time(prompt)
+        if distance is not None:
+            return distance, 0.98, ["computed_distance_speed_time"]
+
+        age = self._age_ratio(prompt)
+        if age is not None:
+            return age, 0.98, ["computed_age_ratio"]
+
+        conversion = self._exact_unit_conversion(prompt)
+        if conversion is not None:
+            return conversion, 0.98, ["computed_unit_conversion"]
+
         together = self._together_cost_algebra(prompt)
         if together is not None:
             return together, 0.98, ["computed_together_cost_algebra"]
@@ -171,6 +187,134 @@ class LocalProvider:
             return text, 0.97, [reason]
 
         return "", 0.0, ["no_local_shortcut"]
+
+    @staticmethod
+    def _fmt_number(value: float) -> str:
+        return str(int(value)) if float(value).is_integer() else f"{value:g}"
+
+    def _work_rate(self, prompt: str) -> str | None:
+        """'A finishes a job in X hours, B in Y hours; how long together?'
+
+        together = XY/(X+Y). Fires only with exactly two rates, a together-ask,
+        and no unaccounted numbers.
+        """
+        if not re.search(r"\b(?:together|working together|both work)\b", prompt, flags=re.IGNORECASE):
+            return None
+        if not re.search(r"\bhow (?:long|many hours|much time)\b", prompt, flags=re.IGNORECASE):
+            return None
+        rates = re.findall(
+            r"\bin\s+(\d+(?:\.\d+)?)\s+(hours?|minutes?|days?)\b", prompt, flags=re.IGNORECASE
+        )
+        if len(rates) != 2 or rates[0][1].rstrip("s").lower() != rates[1][1].rstrip("s").lower():
+            return None
+        all_numbers = re.findall(r"\d+(?:\.\d+)?", prompt)
+        if sorted(all_numbers) != sorted([rates[0][0], rates[1][0]]):
+            return None
+        x, y = float(rates[0][0]), float(rates[1][0])
+        if x <= 0 or y <= 0:
+            return None
+        value = (x * y) / (x + y)
+        unit = rates[0][1].rstrip("s").lower() + ("s" if value != 1 else "")
+        return f"{self._fmt_number(round(value, 4))} {unit}"
+
+    def _distance_speed_time(self, prompt: str) -> str | None:
+        """Pure d = s*t / t = d/s with one speed and one time/distance, no extras."""
+        speed = re.search(r"\b(\d+(?:\.\d+)?)\s*(km/h|kph|mph|miles per hour|kilometers per hour|m/s)\b",
+                          prompt, flags=re.IGNORECASE)
+        if not speed:
+            return None
+        unit = speed.group(2).lower()
+        dist_unit = "km" if unit in {"km/h", "kph", "kilometers per hour"} else (
+            "miles" if unit in {"mph", "miles per hour"} else "m")
+        time_m = re.search(r"\bfor\s+(\d+(?:\.\d+)?)\s+hours?\b", prompt, flags=re.IGNORECASE)
+        dist_m = re.search(rf"\b(\d+(?:\.\d+)?)\s*(?:{dist_unit}|kilometers|miles|meters)\b",
+                           prompt, flags=re.IGNORECASE)
+        all_numbers = re.findall(r"\d+(?:\.\d+)?", prompt)
+        if time_m and re.search(r"\bhow (?:far|many (?:km|kilometers|miles|meters))\b", prompt, flags=re.IGNORECASE):
+            if sorted(all_numbers) != sorted([speed.group(1), time_m.group(1)]):
+                return None
+            if unit == "m/s":
+                return None  # hours * m/s mixes units; refuse
+            return f"{self._fmt_number(float(speed.group(1)) * float(time_m.group(1)))} {dist_unit}"
+        if dist_m and dist_m.group(1) != speed.group(1) and re.search(
+                r"\bhow (?:long|many hours|much time)\b", prompt, flags=re.IGNORECASE):
+            if sorted(all_numbers) != sorted([speed.group(1), dist_m.group(1)]):
+                return None
+            if unit == "m/s":
+                return None
+            hours = float(dist_m.group(1)) / float(speed.group(1))
+            return f"{self._fmt_number(round(hours, 4))} hour" + ("s" if hours != 1 else "")
+        return None
+
+    def _age_ratio(self, prompt: str) -> str | None:
+        """'X is twice/three times as old as Y. X is N years old. How old is Y?'"""
+        ratio_m = re.search(
+            r"\b([A-Z][a-z]+)\s+is\s+(twice|three times|four times|half)\s+as\s+old\s+as\s+([A-Z][a-z]+)",
+            prompt,
+        )
+        if not ratio_m:
+            return None
+        elder, ratio_word, younger = ratio_m.group(1), ratio_m.group(2).lower(), ratio_m.group(3)
+        factor = {"twice": 2.0, "three times": 3.0, "four times": 4.0, "half": 0.5}[ratio_word]
+        age_m = re.search(rf"\b({elder}|{younger})\s+is\s+(\d+(?:\.\d+)?)(?:\s+years?\s+old)?\b", prompt)
+        asked_m = re.search(r"[Hh]ow old is\s+([A-Z][a-z]+)", prompt)
+        if not age_m or not asked_m:
+            return None
+        all_numbers = re.findall(r"\d+(?:\.\d+)?", prompt)
+        if all_numbers != [age_m.group(2)]:
+            return None
+        known_name, known_age = age_m.group(1), float(age_m.group(2))
+        asked = asked_m.group(1)
+        if asked == known_name:
+            return None
+        # elder = factor * younger (factor 0.5 inverts the relation).
+        if known_name == elder and asked == younger:
+            value = known_age / factor
+        elif known_name == younger and asked == elder:
+            value = known_age * factor
+        else:
+            return None
+        if value <= 0 or not float(value).is_integer():
+            return None  # non-integer ages usually mean we mis-parsed; refuse
+        return str(int(value))
+
+    _EXACT_CONVERSIONS = {
+        ("km", "m"): 1000.0, ("m", "cm"): 100.0, ("cm", "mm"): 10.0, ("m", "mm"): 1000.0,
+        ("kg", "g"): 1000.0, ("g", "mg"): 1000.0,
+        ("l", "ml"): 1000.0, ("liter", "ml"): 1000.0, ("litre", "ml"): 1000.0,
+        ("hour", "minute"): 60.0, ("minute", "second"): 60.0, ("hour", "second"): 3600.0,
+        ("day", "hour"): 24.0, ("week", "day"): 7.0,
+    }
+
+    def _exact_unit_conversion(self, prompt: str) -> str | None:
+        """'Convert X km to meters' / 'How many minutes are in X hours' — exact factors only."""
+        m = re.search(
+            r"(?:convert\s+(\d+(?:\.\d+)?)\s*([a-z]+)\s+(?:to|into)\s+([a-z]+)"
+            r"|how many\s+([a-z]+)\s+(?:are\s+)?in\s+(\d+(?:\.\d+)?)\s*([a-z]+))",
+            prompt, flags=re.IGNORECASE,
+        )
+        if not m:
+            return None
+        if m.group(1):
+            qty, src, dst = float(m.group(1)), m.group(2).lower(), m.group(3).lower()
+        else:
+            qty, src, dst = float(m.group(5)), m.group(6).lower(), m.group(4).lower()
+        all_numbers = re.findall(r"\d+(?:\.\d+)?", prompt)
+        if len(all_numbers) != 1:
+            return None
+
+        def canon(u: str) -> str:
+            u = u.rstrip("s").lower()
+            return {"meter": "m", "metre": "m", "kilometer": "km", "kilometre": "km",
+                    "centimeter": "cm", "centimetre": "cm", "millimeter": "mm", "millimetre": "mm",
+                    "gram": "g", "kilogram": "kg", "milligram": "mg",
+                    "milliliter": "ml", "millilitre": "ml"}.get(u, u)
+        src_c, dst_c = canon(src), canon(dst)
+        if (src_c, dst_c) in self._EXACT_CONVERSIONS:
+            return self._fmt_number(qty * self._EXACT_CONVERSIONS[(src_c, dst_c)])
+        if (dst_c, src_c) in self._EXACT_CONVERSIONS:
+            return self._fmt_number(qty / self._EXACT_CONVERSIONS[(dst_c, src_c)])
+        return None
 
     def _together_cost_algebra(self, prompt: str) -> str | None:
         """Classic 'together cost A; one costs B more than the other' algebra.
