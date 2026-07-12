@@ -66,6 +66,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--train-per-label", type=int, default=300)
+    parser.add_argument("--validation-per-label", type=int, default=100)
     parser.add_argument("--test-per-label", type=int, default=200)
     parser.add_argument("--seed", type=int, default=20260712)
     args = parser.parse_args()
@@ -81,14 +82,21 @@ def main() -> None:
         args.seed,
     )
     test_texts = {row["normalized"] for row in test_rows}
+    validation_rows = _select_balanced(
+        _eligible_rows(dataset["validation"], label_names, excluded=test_texts),
+        args.validation_per_label,
+        args.seed + 50,
+    )
+    heldout_texts = test_texts | {row["normalized"] for row in validation_rows}
     train_rows = _select_balanced(
-        _eligible_rows(dataset["train"], label_names, excluded=test_texts),
+        _eligible_rows(dataset["train"], label_names, excluded=heldout_texts),
         args.train_per_label,
         args.seed + 100,
     )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     test_path = args.output_dir / "tweet_eval_test.json"
+    validation_path = args.output_dir / "tweet_eval_validation.json"
     train_path = args.output_dir / "tweet_eval_train.jsonl"
 
     test_specs = [
@@ -101,6 +109,16 @@ def main() -> None:
         for index, row in enumerate(test_rows, start=1)
     ]
     test_path.write_text(json.dumps(test_specs, ensure_ascii=False, indent=2), encoding="utf-8")
+    validation_specs = [
+        {
+            "task_id": f"tweet-validation-{index:04d}",
+            "category": "sentiment",
+            "prompt": row["prompt"],
+            "expected_label": row["label"],
+        }
+        for index, row in enumerate(validation_rows, start=1)
+    ]
+    validation_path.write_text(json.dumps(validation_specs, ensure_ascii=False, indent=2), encoding="utf-8")
 
     instruction = LOCAL_CATEGORY_INSTRUCTIONS["sentiment"]
     with train_path.open("w", encoding="utf-8") as handle:
@@ -114,10 +132,14 @@ def main() -> None:
             }
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
-    for path in (train_path, test_path):
+    for path in (train_path, validation_path, test_path):
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         print(f"{path}: sha256={digest}")
-    print(f"train={len(train_rows)} test={len(test_rows)} overlap={len(test_texts & {row['normalized'] for row in train_rows})}")
+    train_texts = {row["normalized"] for row in train_rows}
+    print(
+        f"train={len(train_rows)} validation={len(validation_rows)} test={len(test_rows)} "
+        f"heldout_train_overlap={len(heldout_texts & train_texts)}"
+    )
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 import time
@@ -21,7 +22,7 @@ from frugalrouter.providers.local_model import (  # noqa: E402
 )
 
 
-def call_server(prompt: str, category: str, port: int) -> tuple[str, int]:
+def call_server(prompt: str, category: str, port: int) -> tuple[str, int, float | None]:
     instruction = LOCAL_CATEGORY_INSTRUCTIONS.get(
         category,
         CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"]),
@@ -34,6 +35,8 @@ def call_server(prompt: str, category: str, port: int) -> tuple[str, int]:
             ],
             "temperature": 0.0,
             "max_tokens": 128,
+            "logprobs": True,
+            "top_logprobs": 5,
         }
     ).encode()
     request = urllib.request.Request(
@@ -46,8 +49,11 @@ def call_server(prompt: str, category: str, port: int) -> tuple[str, int]:
     with urllib.request.urlopen(request, timeout=120) as response:
         payload = json.load(response)
     latency_ms = round((time.perf_counter() - started) * 1000)
-    raw = payload["choices"][0]["message"]["content"] or ""
-    return clean_answer(raw, category), latency_ms
+    choice = payload["choices"][0]
+    raw = choice["message"]["content"] or ""
+    token_rows = (choice.get("logprobs") or {}).get("content") or []
+    first_logprob = float(token_rows[0]["logprob"]) if token_rows else None
+    return clean_answer(raw, category), latency_ms, first_logprob
 
 
 def _load_rows(path: str | Path) -> list[dict]:
@@ -123,7 +129,7 @@ def main() -> None:
     for index, spec in enumerate(specs, start=1):
         prompt = spec.get("prompt") or spec.get("input")
         category = spec["category"]
-        answer, latency_ms = call_server(prompt, category, args.port)
+        answer, latency_ms, first_token_logprob = call_server(prompt, category, args.port)
         accepted = verify_local_answer(prompt, category, answer)
         grade = _grade(answer, spec)
         passed = bool(grade["passed"])
@@ -136,6 +142,8 @@ def main() -> None:
             "dangerous_wrong_accept": accepted and not passed,
             "grade_reason": grade["reason"],
             "latency_ms": latency_ms,
+            "first_token_logprob": first_token_logprob,
+            "first_token_probability": math.exp(first_token_logprob) if first_token_logprob is not None else None,
             "model_label": args.model_label,
         }
         rows.append(row)
