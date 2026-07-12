@@ -131,7 +131,7 @@ The script runs the test suite, builds the linux/amd64 image, and verifies the c
 Published submission image:
 
 ```text
-docker.io/kgotsomsiza/bastion:track1
+docker.io/kgotsomsiza/bastion:track1-v20
 ```
 
 ## Project Layout
