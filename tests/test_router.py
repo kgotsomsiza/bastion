@@ -70,6 +70,55 @@ def test_router_extracts_money_spans_locally_in_source_order():
     assert result.category == "ner"
 
 
+def test_router_honors_explicit_ner_pipe_separator():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=False)
+    task = Task(
+        id="test",
+        input=(
+            "Extract the exact monetary values from this text: "
+            "'The fees are $15.99 for processing and €20.00 for shipping.' "
+            "Return them separated by a pipe character '|' and nothing else."
+        ),
+    )
+
+    result = router.run(task)
+
+    assert result.answer.text == "$15.99|€20.00"
+    assert result.route == "local"
+
+
+def test_router_refuses_structured_ner_json_output():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=False)
+    task = Task(
+        id="test",
+        input="Extract all email addresses from: Use a@example.com. Return a JSON object.",
+    )
+
+    result = router.run(task)
+
+    assert result.answer.text == ""
+    assert result.route == "local_remote_disabled"
+
+
+def test_router_does_not_treat_source_word_pipe_as_format_instruction():
+    config = load_config("config/models.json")
+    router = FrugalRouter(config=config, allow_remote=False)
+    task = Task(
+        id="test",
+        input=(
+            "Extract all email addresses from: "
+            "After the pipe broke, call a@example.com or b@example.org."
+        ),
+    )
+
+    result = router.run(task)
+
+    assert result.answer.text == "a@example.com\nb@example.org"
+    assert result.route == "local"
+
+
 def test_router_refuses_partial_mixed_entity_extraction():
     config = load_config("config/models.json")
     router = FrugalRouter(config=config, allow_remote=False)

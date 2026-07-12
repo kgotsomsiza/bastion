@@ -241,6 +241,22 @@ class LocalProvider:
 
         if not matches:
             return None
+        return self._format_structured_spans(prompt, matches)
+
+    def _format_structured_spans(self, prompt: str, matches: list[str]) -> str | None:
+        lower = prompt.lower()
+        # Do not improvise structured containers whose exact schema is not
+        # mechanically specified by this shortcut.
+        if re.search(r"\b(?:json|xml|yaml|table|object|mapping|dictionary)\b", lower):
+            return None
+        if re.search(r"\bpipe-separated\b|\bseparated by (?:a )?pipe\b|\bpipe character\b", lower):
+            return "|".join(matches)
+        if re.search(r"\bsemicolon-separated\b|\bseparated by semicolons?\b", lower):
+            return "; ".join(matches)
+        if re.search(r"\bcomma-separated\b|\bseparated by commas?\b", lower):
+            return ", ".join(matches)
+        if re.search(r"\b(?:one per line|newline-separated|separate lines?)\b", lower):
+            return "\n".join(matches)
         return "\n".join(matches)
 
     def _together_cost_algebra(self, prompt: str) -> str | None:
