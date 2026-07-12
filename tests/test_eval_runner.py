@@ -65,3 +65,33 @@ def test_summarize_counts_tokens_and_remote_rate():
     assert report["remote_calls"] == 1
     assert report["total_tokens"] == 15
 
+
+def test_summarize_includes_local_model_in_local_safety_counts():
+    report = summarize(
+        [
+            {
+                "passed": True,
+                "used_remote": False,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "route": "local_model",
+                "detected_category": "ner",
+                "task_id": "safe",
+            },
+            {
+                "passed": False,
+                "used_remote": False,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "route": "local_model",
+                "detected_category": "sentiment",
+                "task_id": "unsafe",
+            },
+        ],
+        elapsed_seconds=0.1,
+    )
+
+    assert report["local_answered"] == 2
+    assert report["local_passed"] == 1
+    assert report["local_wrong_task_ids"] == ["unsafe"]
+

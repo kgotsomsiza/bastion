@@ -153,7 +153,7 @@ def summarize(rows: list[dict[str, Any]], elapsed_seconds: float) -> dict[str, A
     with_expected = [row for row in rows if row.get("expected_category")]
     matched = [row for row in with_expected if row["expected_category"] == row["detected_category"]]
 
-    local_graded = [row for row in graded if row["route"] == "local"]
+    local_graded = [row for row in graded if row["route"] in {"local", "local_model"}]
     local_wrong = [row for row in local_graded if not row["passed"]]
 
     truncated = [row for row in rows if row.get("finish_reason") == "length"]
