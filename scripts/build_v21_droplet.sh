@@ -10,8 +10,8 @@ set -euo pipefail
 ASSET_DIR="${ASSET_DIR:-/root/v21}"
 BASE_IMAGE="${BASE_IMAGE:-docker.io/kgotsomsiza/bastion:track1-v20}"
 OUTPUT_IMAGE="${OUTPUT_IMAGE:-bastion:v21-local}"
-V21_COMMIT="${V21_COMMIT:-53e30d9}"
-V21_REVISION="${V21_REVISION:-53e30d9ef48548cb5b7a04394865feebbe5b1ce8}"
+V21_COMMIT="${V21_COMMIT:-50d0807}"
+V21_REVISION="${V21_REVISION:-50d080734c195f129a8131a337b35a0d0c102c1b}"
 MODEL="$ASSET_DIR/qwen3-4b.gguf"
 
 test -f "$MODEL"
