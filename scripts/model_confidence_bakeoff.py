@@ -62,6 +62,20 @@ def threshold_sweep(rows: list[dict[str, Any]], metric: str) -> list[dict[str, A
     return results
 
 
+def checkpoint_path_for(output_path: Path) -> Path:
+    return output_path.with_suffix(output_path.suffix + ".rows.jsonl")
+
+
+def load_checkpoint_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
 def run(model_path: Path, tasks_path: Path, output_path: Path) -> int:
     from llama_cpp import Llama, LogitsProcessorList
 
@@ -80,9 +94,21 @@ def run(model_path: Path, tasks_path: Path, output_path: Path) -> int:
     if disable_thinking_requested and not non_thinking_configured:
         raise RuntimeError("BAKEOFF_DISABLE_THINKING was requested but no GGUF chat template exists")
     load_seconds = time.perf_counter() - started
-    rows: list[dict[str, Any]] = []
+    checkpoint_path = checkpoint_path_for(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if env_flag("BAKEOFF_RESUME"):
+        rows = load_checkpoint_rows(checkpoint_path)
+    else:
+        checkpoint_path.unlink(missing_ok=True)
+        rows = []
+    completed_task_ids = {str(row["task_id"]) for row in rows}
+    if rows:
+        print(f"resuming with {len(rows)} checkpointed tasks", flush=True)
 
     for index, spec in enumerate(tasks, 1):
+        task_id = str(spec.get("task_id") or f"task-{index}")
+        if task_id in completed_task_ids:
+            continue
         category = str(spec.get("category") or "general")
         explanation_requested = prompt_wants_explanation(spec["prompt"])
         instruction = instruction_for_local_task(category, spec["prompt"])
@@ -113,7 +139,7 @@ def run(model_path: Path, tasks_path: Path, output_path: Path) -> int:
         margins = margins[:completion_tokens]
         grade = grade_answer(answer, spec)
         row = {
-            "task_id": spec.get("task_id"),
+            "task_id": task_id,
             "category": category,
             "prompt": spec["prompt"],
             "answer": answer,
@@ -127,12 +153,23 @@ def run(model_path: Path, tasks_path: Path, output_path: Path) -> int:
             **summarize_confidence(probabilities, margins),
         }
         rows.append(row)
+        with checkpoint_path.open("a", encoding="utf-8") as checkpoint:
+            checkpoint.write(json.dumps(row, ensure_ascii=False) + "\n")
+            checkpoint.flush()
+            os.fsync(checkpoint.fileno())
         print(
             f"{index}/{len(tasks)} {row['task_id']} {category} correct={row['correct']} "
             f"pmean={row['mean_probability']:.3f} pmin={row['min_probability']:.3f} "
             f"{latency:.1f}s",
             flush=True,
         )
+
+    rows_by_id = {str(row["task_id"]): row for row in rows}
+    rows = [
+        rows_by_id[task_id]
+        for index, spec in enumerate(tasks, 1)
+        if (task_id := str(spec.get("task_id") or f"task-{index}")) in rows_by_id
+    ]
 
     categories: dict[str, dict[str, Any]] = {}
     for category in sorted({row["category"] for row in rows}):
@@ -160,7 +197,6 @@ def run(model_path: Path, tasks_path: Path, output_path: Path) -> int:
         "categories": categories,
         "rows": rows,
     }
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report["summary"], indent=2), flush=True)
     return 0
