@@ -34,14 +34,12 @@
   },
   "local_model": {
     "model_path": "/app/models/model.gguf",
-    "model_label": "qwen3-4b-instruct-2507-q4km",
-    "categories": [
-      "ner"
-    ],
+    "model_label": "disabled-v21-structural-ner",
+    "categories": [],
     "max_tokens": 64,
     "n_ctx": 2048,
     "n_threads": 2,
-    "_comment": "V21: Qwen3-4B-Instruct-2507 Q4_K_M is enabled for NER only. Sentiment and factual were unsafe on both measured 4B candidates; summarization had too little accepted yield and near-timeout latency. NER must pass the strict exact-entity-set holdout gate before this image ships."
+    "_comment": "V21: no bundled model. Exact deterministic extraction handles email-only and monetary-value-only NER prompts; all ambiguous or unsupported NER stays remote. Qwen3-4B was rejected after strict holdout testing produced dangerous incomplete answers and excessive memory/latency risk."
   },
   "model_policy": {
     "code_debugging": [

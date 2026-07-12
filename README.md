@@ -46,7 +46,7 @@ task -> classify category -> deterministic shortcut if very safe
 
 The agent covers the eight Track 1 categories: factual Q&A, math reasoning, sentiment, summarization, NER, code debugging, logic puzzles, and code generation.
 
-Deterministic shortcuts only fire when they are provably safe: sentiment needs a clear multi-keyword majority with no negation, math needs a purely computational prompt, and exact-response instructions must not offer alternatives. Everything else escalates to Fireworks with per-category model preference (Gemma models where sensible, `kimi-k2p7-code` for code) and per-category token caps.
+Deterministic shortcuts only fire when they are provably safe: sentiment needs a clear multi-keyword majority with no negation, math needs a purely computational prompt, exact-response instructions must not offer alternatives, and structured NER is limited to complete exact-span extraction for email-only or monetary-value-only requests. Mixed or ambiguous entity requests escalate to Fireworks. Everything else uses per-category model preference (Gemma models where sensible, `kimi-k2p7-code` for code) and per-category token caps.
 
 Remote calls are resilient by design: transient errors (429/5xx) retry with exponential backoff, a persistently failing model fails over to the next allowed model, 404 model names advance immediately, and an empty answer at the token cap is retried once with a larger cap. A task never crashes the batch.
 
