@@ -35,14 +35,11 @@
   "local_model": {
     "model_path": "/app/models/model.gguf",
     "model_label": "qwen2.5-3b-q4",
-    "categories": [
-      "sentiment",
-      "ner"
-    ],
+    "categories": [],
     "max_tokens": 128,
     "n_ctx": 4096,
     "n_threads": 2,
-    "_comment": "Zero-token tier: 3B Q4, verification-gated with one corrective retry. sentiment+ner ONLY: both measured 100% on accepted answers across every round; summarization measurably leaked wrong answers through verification twice (V15 suspected, V17 retry measured 5/6) and stays remote. factual 75% raw - remote."
+    "_comment": "V20: local-model tier DISABLED. Measured across 5 hidden runs: no-tier configs scored 17/19 twice (V13,V14); tier configs (stock V15/V17, fine-tuned V19) scored 16/19 three times with small-to-negative token savings. Verification checks format, never judgment; the tier costs ~1 hidden task. Deterministic solvers and remote path unchanged."
   },
   "model_policy": {
     "code_debugging": [
