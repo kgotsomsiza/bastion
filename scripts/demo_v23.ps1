@@ -18,7 +18,7 @@ try {
     $logsDir = Join-Path $runDir "logs"
     New-Item -ItemType Directory -Force -Path $inputDir, $outputDir, $logsDir | Out-Null
 
-    $taskJson = @(@{ task_id = "v23-demo"; prompt = $Prompt }) | ConvertTo-Json -Compress -Depth 5
+    $taskJson = ConvertTo-Json -InputObject @(@{ task_id = "v23-demo"; prompt = $Prompt }) -Compress -Depth 5
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [IO.File]::WriteAllText((Join-Path $inputDir "tasks.json"), $taskJson, $utf8NoBom)
 
