@@ -162,16 +162,7 @@ docker.io/kgotsomsiza/bastion:track1-v23
 - `config/models.json` - V23 local thresholds, remote routing, and token caps.
 - `docs/track1_battle_plan.md` - solo-builder plan for Track 1.
 
-## Troubleshooting
+## License
 
-If Docker Desktop dies at startup with `remove ...: The file cannot be accessed by the system`, run:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/fix_docker.ps1
-```
-
-If the Twitch web player buffers or fails, launch the lablab.ai Twitch stream through VLC:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/watch_lablab_twitch.ps1
-```
+Bastion's source code is licensed under the [MIT License](LICENSE). Third-party
+dependencies and model weights remain subject to their respective licenses.
