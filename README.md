@@ -37,18 +37,31 @@ Expected output:
 ## Strategy
 
 ```text
-task -> classify category -> deterministic shortcut if very safe
-     -> choose allowed Fireworks model
-     -> concise prompt through FIREWORKS_BASE_URL
+task -> classify category
+     -> deterministic shortcut when the form is provably safe (0 tokens)
+     -> confidence-gated Qwen3.5-4B when confidence + verifier agree (0 tokens)
+     -> Gemma 4 through FIREWORKS_BASE_URL for reasoning and uncertainty
+     -> Kimi for code specialization and model failover
      -> write official answer JSON
      -> log route/model/token metadata separately
 ```
 
 The agent covers the eight Track 1 categories: factual Q&A, math reasoning, sentiment, summarization, NER, code debugging, logic puzzles, and code generation.
 
-Deterministic shortcuts only fire when they are provably safe: sentiment needs a clear multi-keyword majority with no negation, math needs a purely computational prompt, and exact-response instructions must not offer alternatives. Everything else escalates to Fireworks with per-category model preference (Gemma models where sensible, `kimi-k2p7-code` for code) and per-category token caps.
+Deterministic shortcuts only fire when they are provably safe: sentiment needs a clear multi-keyword majority with no negation, math needs a purely computational prompt, and exact-response instructions must not offer alternatives.
+
+V23 adds a bundled Qwen3.5-4B confidence tier for factual Q&A, sentiment, NER, code debugging, and code generation. A local answer is accepted only when its minimum generated-token probability clears a category-specific threshold and a category verifier also accepts it. Math, logic, and summarization stay remote because blind testing showed that local confidence was not a reliable safety signal there. If the model weights are absent or fail to load, the tier cleanly falls through to the proven Fireworks path.
+
+Gemma 4 31B is first in the remote policy for reasoning, knowledge, and summarization; `kimi-k2p7-code` provides code specialization and failover. Live Gemma deployment tests informed the direct-answer prompt, disabled thinking spill, conservative completion caps, and recovery policy.
 
 Remote calls are resilient by design: transient errors (429/5xx) retry with exponential backoff, a persistently failing model fails over to the next allowed model, 404 model names advance immediately, and an empty answer at the token cap is retried once with a larger cap. A task never crashes the batch.
+
+## Measured Result
+
+- Official scored V23 run: **17/19 correct (89.5%) at 2,855 Fireworks tokens**.
+- Confidence policy validation: **52/52 accepted local answers correct** across the 19-task replica and two disjoint blind sets.
+- Gemma 4 31B evaluation: **75/80 correct (93.8%)** on the second 80-task blind suite.
+- Submission contract: public `linux/amd64` image, verified under the official 4 GB RAM / 2 vCPU limits.
 
 ## Quick Start
 
@@ -119,19 +132,19 @@ docker run --rm `
   bastion:track1
 ```
 
-For submission, build, verify, and publish in one step (the push only happens with `-Push`):
+The lightweight baseline uses the default `Dockerfile`. The V23 submission image bundles the exact Qwen3.5 GGUF and is built with the audited V23 script (the push only happens with `-Push`):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/build_submission.ps1 -Registry docker.io/kgotsomsiza          # build + verify only
-powershell -ExecutionPolicy Bypass -File scripts/build_submission.ps1 -Registry docker.io/kgotsomsiza -Push    # publish for submission
+powershell -ExecutionPolicy Bypass -File scripts/build_qwen35_submission.ps1 -Registry docker.io/kgotsomsiza -Tag track1-v23
+powershell -ExecutionPolicy Bypass -File scripts/build_qwen35_submission.ps1 -Registry docker.io/kgotsomsiza -Tag track1-v23 -Push
 ```
 
-The script runs the test suite, builds the linux/amd64 image, and verifies the container contract (reads `/input/tasks.json`, writes `/output/results.json`, exits 0) before any push.
+The script verifies the exact model checksum, runs the test suite, builds `linux/amd64`, and tests the container contract under 4 GB / 2 vCPU before any push. Model weights and vendored wheels are intentionally not committed to Git; the published image below is the reproducible submission artifact.
 
 Published submission image:
 
 ```text
-docker.io/kgotsomsiza/bastion:track1-v20
+docker.io/kgotsomsiza/bastion:track1-v23
 ```
 
 ## Project Layout
@@ -141,10 +154,12 @@ docker.io/kgotsomsiza/bastion:track1-v20
 - `frugalrouter/task_classifier.py` - category classifier.
 - `frugalrouter/model_policy.py` - allowed-model selection.
 - `frugalrouter/providers/local.py` - deterministic zero-token shortcuts.
+- `frugalrouter/providers/local_model.py` - confidence-measured Qwen3.5 inference.
+- `frugalrouter/local_verify.py` - category-specific local acceptance checks.
 - `frugalrouter/providers/fireworks.py` - Fireworks judging-proxy client.
 - `frugalrouter/decision_log.py` - JSONL decision logging.
 - `frugalrouter/report.py` - summary report for route decisions.
-- `config/models.json` - model routing and token caps.
+- `config/models.json` - V23 local thresholds, remote routing, and token caps.
 - `docs/track1_battle_plan.md` - solo-builder plan for Track 1.
 
 ## Troubleshooting

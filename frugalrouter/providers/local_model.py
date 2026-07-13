@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+import math
 import os
 import threading
 import time
 from typing import Any
 
-from frugalrouter.prompting import CATEGORY_INSTRUCTIONS, clean_answer
+from frugalrouter.prompting import CATEGORY_INSTRUCTIONS, clean_answer, prompt_wants_explanation
 from frugalrouter.types import Answer, Task
 
 
@@ -26,6 +28,64 @@ LOCAL_CATEGORY_INSTRUCTIONS = {
         "Obey any stated word or sentence limit exactly. Output only the summary."
     ),
 }
+
+
+@dataclass(frozen=True)
+class LocalModelResult:
+    answer: Answer
+    first_probability: float
+    min_probability: float
+    geometric_mean_probability: float
+    mean_margin: float
+
+
+def instruction_for_local_task(category: str, prompt: str) -> str:
+    if category in {"math", "logic"} and not prompt_wants_explanation(prompt):
+        return (
+            "Solve internally. Output only the requested final answer, with no reasoning, "
+            "work, preamble, or FINAL ANSWER label."
+        )
+    return LOCAL_CATEGORY_INSTRUCTIONS.get(
+        category, CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
+    )
+
+
+def confidence_from_logits(scores: Any) -> tuple[float, float]:
+    # NumPy is installed with llama-cpp-python in the local-model image, but
+    # imported lazily so the lightweight V20 image can import this module.
+    import numpy as np
+
+    values = np.asarray(scores, dtype=np.float64)
+    top_two = np.partition(values, -2)[-2:]
+    maximum = float(top_two.max())
+    second = float(top_two.min())
+    probability = 1.0 / float(np.exp(values - maximum).sum())
+    return probability, maximum - second
+
+
+def _non_thinking_template(template: str) -> str:
+    return "{%- set enable_thinking = false -%}\n" + template
+
+
+def configure_non_thinking_chat(model: Any) -> bool:
+    template = model.metadata.get("tokenizer.chat_template")
+    if not template:
+        return False
+
+    from llama_cpp.llama_chat_format import Jinja2ChatFormatter
+
+    eos_token_id = model.token_eos()
+    bos_token_id = model.token_bos()
+    eos_token = model._model.token_get_text(eos_token_id) if eos_token_id != -1 else ""
+    bos_token = model._model.token_get_text(bos_token_id) if bos_token_id != -1 else ""
+    model.chat_handler = Jinja2ChatFormatter(
+        template=_non_thinking_template(template),
+        eos_token=eos_token,
+        bos_token=bos_token,
+        stop_token_ids=[eos_token_id] if eos_token_id != -1 else None,
+    ).to_chat_handler()
+    model.chat_format = None
+    return True
 
 
 class LocalModelProvider:
@@ -51,6 +111,12 @@ class LocalModelProvider:
         self.max_tokens = int(cfg.get("max_tokens", 256))
         self.n_ctx = int(cfg.get("n_ctx", 2048))
         self.n_threads = int(cfg.get("n_threads", os.cpu_count() or 2))
+        self.n_batch = int(cfg.get("n_batch", 512))
+        self.disable_thinking = bool(cfg.get("disable_thinking", False))
+        self.confidence_thresholds = {
+            str(category): float(threshold)
+            for category, threshold in cfg.get("confidence_thresholds", {}).items()
+        }
         self._llm: Any = None
         self._load_failed = False
         # llama.cpp is not thread-safe; the CLI runs tasks in parallel workers,
@@ -79,20 +145,40 @@ class LocalModelProvider:
                     model_path=self.model_path,
                     n_ctx=self.n_ctx,
                     n_threads=self.n_threads,
+                    n_batch=self.n_batch,
                     verbose=False,
                 )
+                if self.disable_thinking and not configure_non_thinking_chat(self._llm):
+                    raise RuntimeError("local model has no GGUF chat template for non-thinking mode")
                 return True
             except Exception:  # noqa: BLE001 - any load failure => fall back to remote
                 self._load_failed = True
                 return False
 
-    def answer(self, task: Task, category: str = "general", corrective_hint: str | None = None) -> Answer:
+    def confidence_threshold_for(self, category: str) -> float:
+        return self.confidence_thresholds.get(category, 1.01)
+
+    def answer(
+        self,
+        task: Task,
+        category: str = "general",
+        corrective_hint: str | None = None,
+    ) -> LocalModelResult:
+        from llama_cpp import LogitsProcessorList
+
         started = time.perf_counter()
-        instruction = LOCAL_CATEGORY_INSTRUCTIONS.get(
-            category, CATEGORY_INSTRUCTIONS.get(category, CATEGORY_INSTRUCTIONS["general"])
-        )
+        instruction = instruction_for_local_task(category, task.input)
         if corrective_hint:
             instruction = f"{instruction}\n{corrective_hint}"
+        probabilities: list[float] = []
+        margins: list[float] = []
+
+        def capture(_input_ids, scores):
+            probability, margin = confidence_from_logits(scores)
+            probabilities.append(probability)
+            margins.append(margin)
+            return scores
+
         with self._lock:
             completion = self._llm.create_chat_completion(
                 messages=[
@@ -101,17 +187,40 @@ class LocalModelProvider:
                 ],
                 temperature=0.0,
                 max_tokens=self.max_tokens,
+                logits_processor=LogitsProcessorList([capture]),
             )
         latency_ms = int((time.perf_counter() - started) * 1000)
         choice = completion["choices"][0]
-        text = clean_answer((choice.get("message") or {}).get("content") or "", category)
+        text = clean_answer(
+            (choice.get("message") or {}).get("content") or "",
+            category,
+            prompt=task.input,
+        )
+        completion_tokens = int((completion.get("usage") or {}).get("completion_tokens", len(probabilities)))
+        probabilities = probabilities[:completion_tokens]
+        margins = margins[:completion_tokens]
+        if probabilities:
+            first_probability = probabilities[0]
+            min_probability = min(probabilities)
+            geometric_mean_probability = math.exp(
+                sum(math.log(max(value, 1e-300)) for value in probabilities) / len(probabilities)
+            )
+            mean_margin = sum(margins) / len(margins)
+        else:
+            first_probability = min_probability = geometric_mean_probability = mean_margin = 0.0
         # prompt/completion tokens stay 0: local inference is free for scoring.
-        return Answer(
-            text=text,
-            provider=self.name,
-            model=self.model_label,
-            prompt_tokens=0,
-            completion_tokens=0,
-            latency_ms=latency_ms,
-            finish_reason=choice.get("finish_reason"),
+        return LocalModelResult(
+            answer=Answer(
+                text=text,
+                provider=self.name,
+                model=self.model_label,
+                prompt_tokens=0,
+                completion_tokens=0,
+                latency_ms=latency_ms,
+                finish_reason=choice.get("finish_reason"),
+            ),
+            first_probability=first_probability,
+            min_probability=min_probability,
+            geometric_mean_probability=geometric_mean_probability,
+            mean_margin=mean_margin,
         )

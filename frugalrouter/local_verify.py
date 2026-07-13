@@ -29,6 +29,40 @@ _STOPWORDS = {
 
 
 def verify_local_answer(prompt: str, category: str, answer: str) -> bool:
+    if not _common_constraints_met(prompt, answer):
+        return False
+    text = answer.strip()
+    lowered = text.lower()
+    if category == "sentiment":
+        return _verify_sentiment(prompt, lowered)
+    if category == "ner":
+        return _verify_ner(prompt, text)
+    if category == "summarization":
+        return _verify_summary(prompt, text)
+    return False
+
+
+def verify_confident_local_answer(prompt: str, category: str, answer: str) -> bool:
+    """Check constraints that confidence cannot validate on its own.
+
+    Factual and code answers have no deterministic semantic verifier, so their
+    correctness gate is calibrated model confidence plus these output checks.
+    Sentiment, NER, and summaries retain their stricter category checks.
+    """
+    if not _common_constraints_met(prompt, answer):
+        return False
+    text = answer.strip()
+    lowered = text.lower()
+    if category == "sentiment":
+        return _verify_sentiment(prompt, lowered)
+    if category == "ner":
+        return _verify_ner(prompt, text)
+    if category == "summarization":
+        return _verify_summary(prompt, text)
+    return True
+
+
+def _common_constraints_met(prompt: str, answer: str) -> bool:
     text = (answer or "").strip()
     if not text or len(text) > 400:
         return False
@@ -37,13 +71,7 @@ def verify_local_answer(prompt: str, category: str, answer: str) -> bool:
         return False
     if not _explicit_constraints_met(prompt, text):
         return False
-    if category == "sentiment":
-        return _verify_sentiment(prompt, lowered)
-    if category == "ner":
-        return _verify_ner(prompt, text)
-    if category == "summarization":
-        return _verify_summary(prompt, text)
-    return False
+    return True
 
 
 def _verify_sentiment(prompt: str, lowered_answer: str) -> bool:

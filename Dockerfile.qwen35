@@ -1,0 +1,20 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV FRUGAL_ALLOW_REMOTE=1
+ENV LOCAL_MODEL_PATH=/app/models/model.gguf
+ENV FRUGAL_WORKERS=2
+ENV PYTHONPATH=/app
+
+WORKDIR /app
+
+COPY wheels /wheels
+RUN python -m pip install --no-cache-dir --no-index --find-links=/wheels llama-cpp-python \
+ && rm -rf /wheels
+
+COPY models/model.gguf /app/models/model.gguf
+COPY frugalrouter ./frugalrouter
+COPY config ./config
+
+CMD ["python", "-m", "frugalrouter.cli"]

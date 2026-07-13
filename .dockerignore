@@ -28,6 +28,6 @@ data
 .env
 AGENT_CONTEXT.local.md
 MODEL_STRATEGY.local.md
-Bastion_Track1.*
+Bastion_Track1*
 *_PLAN.local.md
 recent_data.txt
